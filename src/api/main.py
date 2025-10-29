@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from src.api.routers.admin import router as admin_router
+from src.api.routers.chat import router as chat_router
+
 app = FastAPI(title="LoanBot API", version="0.1.0")
 
-
-@app.get("/health", tags=["health"])
-def health_check() -> dict[str, str]:
-    """기본 헬스 체크 엔드포인트."""
-    return {"status": "ok"}
+app.include_router(chat_router)
+app.include_router(admin_router)

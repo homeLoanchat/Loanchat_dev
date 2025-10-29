@@ -15,6 +15,47 @@
     - LMS를 통한 과제 미제출 시 점수가 부여되지 않습니다. 
 - PR 제출 시 유의사항
     - 프로젝트 진행 결과 및 과업 수행 내용은 README.md에 상세히 작성 부탁 드립니다. 
-    - 멘토님들께서 어플리케이션 실행을 위해 확인해야 할 환경설정 값 등도 반드시 PR 부가 설명란 혹은 README.md에 작성 부탁 드립니다.
+    - 멘토님들께서 어플리케이션 실행을 위해 확인해야 할 환경설정 값 등도 반드시 PR 부가 설명란 혹은 README.md에 작성 부탁 드립니다.
     - **Pull Request에서 제출 후 절대 병합(Merge)하지 않도록 주의하세요!**
     - 수행 및 제출 과정에서 문제가 발생한 경우, 바로 강사님에게 얘기하세요! 
+
+### FastAPI 개발 서버 실행 방법
+- 의존성 설치: `pip install -r requirements.txt`
+- 서버 실행: `uvicorn src.api.main:app --reload`
+- 대시보드 확인: 브라우저에서 `http://localhost:8000/docs`
+
+- `GET /api/admin/health`: 헬스체크(예: `{"status": "ok", "timestamp": "2024-01-01T00:00:00+00:00"}`)
+
+```jsonc
+// POST /api/chat 요청 예시
+{
+  "message": "대출 한도가 궁금해",
+  "intent": "informational",
+  "category": "loan_limit"
+}
+
+// 200 OK 응답 예시
+{
+  "result": {
+    "intent": "informational",
+    "payload": {
+      "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
+      "sources": [
+        "https://example.com/loan-guidelines",
+        "https://example.com/credit-score"
+      ]
+    }
+  },
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "정보형 답변을 생성했습니다."
+    }
+  ],
+  "trace_id": "73f73543-5470-4f1e-9df6-b2e8de58764b",
+  "meta": {
+    "mock": true,
+    "generated_at": "2024-01-01T00:00:00+00:00"
+  }
+}
+```
