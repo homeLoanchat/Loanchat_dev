@@ -1,11 +1,11 @@
-version: "3.9"
+
 
 services:
   api:
     # TODO: 빌드 컨텍스트와 Dockerfile 경로를 지정하세요.
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: loanbot-api
     environment:
       # TODO: 필요한 환경변수를 여기에 나열하세요.
@@ -14,9 +14,11 @@ services:
       - "8000:8000"
     volumes:
       # TODO: 개발 시 필요한 볼륨 마운트를 선언하세요.
-      - ./:/app
+      - ./api:/app
     command: >-
       uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - vectorstore
 
   vectorstore:
     # TODO: Chroma 혹은 기타 백엔드를 컨테이너로 운영한다면 설정하세요.
