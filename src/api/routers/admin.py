@@ -1,25 +1,22 @@
-"""/admin 라우터.
-
-TODO:
-1. 지식베이스 리프레시, 메트릭 조회, 시스템 상태 확인 엔드포인트를 정의하세요.
-2. 관리자 인증/권한 검증 로직을 추가하세요.
-3. 백그라운드 작업 큐(예: Celery, RQ) 연동을 고려하세요.
-"""
+"""/admin 라우터."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+from src.api.schemas import HealthResponse
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-@router.post("/refresh")
-def trigger_refresh() -> dict[str, str]:
-    """TODO: 지식베이스 리프레시 작업을 트리거하세요."""
-    raise NotImplementedError("refresh 엔드포인트를 구현하세요.")
-
-
-@router.get("/metrics")
-def read_metrics() -> dict[str, str]:
-    """TODO: 핵심 SLA/토큰 사용량 등을 반환하세요."""
-    raise NotImplementedError("metrics 엔드포인트를 구현하세요.")
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="관리자용 헬스체크",
+    description="모니터링·테스트에서 서버 상태를 확인하는 관리자용 헬스체크 엔드포인트.",
+)
+def health_check() -> HealthResponse:
+    """서버가 정상 동작하는지 간단히 확인한다."""
+    return HealthResponse(timestamp=datetime.now(timezone.utc))

@@ -1,20 +1,63 @@
-"""/chat 라우터.
-
-TODO:
-1. 사용자 메시지 스키마(요청/응답)를 Pydantic 모델로 정의하세요.
-2. LangGraph 실행기 혹은 LangChain 체인을 주입받아 실행하세요.
-3. 토큰/레이턴시 메트릭 수집을 `src.core.metrics`와 연동하세요.
-4. 오류 발생 시 `src.core.exceptions`에 정의한 도메인 예외를 활용하세요.
-"""
+"""/chat 라우터."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from typing import Any
+
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+from src.api.schemas import (
+    ChatIntent,
+    ChatRequest,
+    ChatResponse,
+    build_mock_response,
+)
+
+router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
-@router.post("/")
-def chat_endpoint() -> dict[str, str]:
-    """TODO: LangGraph 워크플로를 호출해 응답을 생성하세요."""
-    raise NotImplementedError("chat 엔드포인트를 구현하세요.")
+@router.post(
+    "",
+    response_model=ChatResponse,
+    response_model_exclude_none=True,
+    summary="통합 챗봇 엔드포인트",
+    description="정보형/계산형 intent에 따라 Mock 응답을 반환합니다.",
+)
+def chat_endpoint(payload: ChatRequest) -> ChatResponse:
+    """정보형과 계산형 intent에 대해 샘플 응답을 반환한다."""
+
+    generated_at = datetime.now(timezone.utc)
+
+    payload_data: dict[str, Any]
+
+    if payload.intent == ChatIntent.INFORMATIONAL:
+        payload_data = {
+            "type": payload.intent.value,
+            "content": {
+                "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
+                "sources": [
+                    "https://example.com/loan-guidelines",
+                    "https://example.com/credit-score",
+                ],
+            },
+        }
+        message = "정보형 답변을 생성했습니다."
+    else:
+        payload_data = {
+            "type": payload.intent.value,
+            "content": {
+                "result": 32500000,
+                "currency": "KRW",
+                "explanation": "월 상환 가능액과 금리를 기준으로 산출한 예상 대출 한도입니다.",
+            },
+        }
+        message = "계산형 답변을 생성했습니다."
+
+    # TODO(Iteration 2): MockRetriever/MockCompute를 DI로 주입해 intent별 실제 응답 생성
+    return build_mock_response(
+        intent=payload.intent,
+        payload=payload_data,
+        message=message,
+        generated_at=generated_at,
+    )
