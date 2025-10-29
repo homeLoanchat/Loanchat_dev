@@ -1,0 +1,79 @@
+name: Assign random reviewer
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write  # 코멘트 작성용
+
+env:
+  REVIEWER_POOL: |
+    juncity-kim
+    jaeaeee
+    doublejh0501
+    zneda330
+  REVIEWER_COUNT: "1"
+
+jobs:
+  roulette:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pick random reviewer & request review
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr || pr.draft) {
+              core.notice("Draft PR or no PR payload – skipping.");
+              return;
+            }
+
+            // 1) 후보 풀 불러오기
+            const pool = (process.env.REVIEWER_POOL || "")
+              .split("\n").map(s => s.trim()).filter(Boolean);
+
+            // 2) 작성자 / 이미 요청된 리뷰어 제외
+            const author = pr.user.login.toLowerCase();
+            let candidates = pool.filter(u => u.toLowerCase() !== author);
+
+            const already = (pr.requested_reviewers || [])
+              .map(u => u.login.toLowerCase());
+            candidates = candidates.filter(u => !already.includes(u.toLowerCase()));
+
+            if (candidates.length === 0) {
+              core.notice("No available reviewers after excluding author/already-requested.");
+              return;
+            }
+
+            // 3) 랜덤 셔플 + 1명 선택
+            const need = Math.min(parseInt(process.env.REVIEWER_COUNT || "1", 10), candidates.length);
+            for (let i = candidates.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+            }
+            const chosen = candidates.slice(0, need);
+
+            // 4) 리뷰어 요청
+            await github.rest.pulls.requestReviewers({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              reviewers: chosen,
+            });
+
+            // 5) 코멘트 남기기 (슬랙 구독이 있다면 이 코멘트가 슬랙에도 자동 전송됨)
+            const body = `@${chosen.join(", @")} 님, 랜덤 리뷰 미션이 도착했습니다! 🚀\n\n작성자: @${pr.user.login}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body,
+            });
+
+            core.notice(`Requested review from: ${chosen.join(", ")}`);
+
+            
