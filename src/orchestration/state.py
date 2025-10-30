@@ -1,14 +1,18 @@
-"""LangGraph 상태 스키마 정의."""
-
-from __future__ import annotations
+# orchestration/state.py
+# 최소 의존성: 표준 라이브러리만 사용 (pydantic 제거)
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Literal, TypedDict, List, Dict, Any, Optional
 
+class Message(TypedDict):
+    role: Literal["user", "assistant", "system"]
+    content: str
 
 @dataclass
-class ConversationState:
-    """TODO: 대화 이력, 요약, 검색 결과 등을 포함한 상태 필드를 정의하세요."""
-
-    messages: list[Any] = field(default_factory=list)
-    context: dict[str, Any] = field(default_factory=dict)
+class OrchestrationState:
+    user_query: str
+    mode: Optional[Literal["calc", "info"]] = None
+    inputs: Dict[str, Any] = field(default_factory=dict)
+    docs: List[Dict[str, Any]] = field(default_factory=list)
+    calc: Dict[str, Any] = field(default_factory=dict)
+    sources: List[Dict[str, str]] = field(default_factory=list)

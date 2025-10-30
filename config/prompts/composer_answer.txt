@@ -2,3 +2,43 @@
 # - 검색된 문서, 계산 결과를 종합하여 답변 구조(서론/핵심/주의사항)를 안내하세요.
 # - 금융 관련 주의/면책 문구 템플릿을 포함하세요.
 # - JSON/마크다운 등 응답 포맷 요구사항이 있다면 명시하세요.
+
+{% if mode == "calc" %}
+ **계산 결과**
+
+- 예상 대출 한도는 **약 {{ limit_kr }}원**입니다.
+- 적용 금리는 **연 {{ rate | round(2) }}%**, 상환 방식은 **{{ term_years }}년({{ term_years*12 }}개월) {{ repay_type }}** 기준입니다.
+- 이 조건이라면 매월 상환액은 **약 {{ monthly_kr }}원**, 총 이자 부담은 **약 {{ total_interest_kr }}원**으로 예상됩니다.
+> 계산은 외부 계산엔진의 산출 결과를 기준으로 했습니다.
+
+ **설명 및 근거**
+{{ rationale }}
+
+ **출처**
+{% for s in sources %}- {{ s.name }} ({{ s.date }})
+{% endfor %}
+
+**한 줄 요약** {{ one_liner }}
+{% if assumptions and assumptions|length > 0 %}
+ **Assumptions**: {{ assumptions | join(", ") }}
+{% endif %}
+
+**유의사항**
+- 본 결과는 참고용이며 실제 한도와 금리는 금융기관 심사 결과에 따라 달라질 수 있다.
+- 개인정보는 입력·출력·로그에 저장하지 않는다.
+{% endif %}
+
+{% if mode == "info" %}
+**요약**
+{{ summary }}
+
+**핵심 내용**
+{{ details }}
+
+ **출처**
+{% for s in sources %}- {{ s.name }} ({{ s.date }})
+{% endfor %}
+
+**유의사항**
+- 실제 취급 조건은 금융기관 심사와 약관에 따른다.
+{% endif %}

@@ -1,0 +1,216 @@
+# 어떤 기관에서 어떤 주제의 문서를 가져올지 정의
+
+sources:
+  - name: 데이터 공공포털
+    base_url: api.odcloud.kr/api
+    topics:
+      - name: 한국주택금융공사_주택금융 및 보금자리론 실태조사(주택담보대출금액(대출원금))
+        type: api
+        category: finance # 통계 데이터
+        api:
+          endpoint: "https://api.odcloud.kr/api/15121082/v1/uddi:f841e57f-69a8-4185-9fcc-c76a6ae5015e"
+          method: GET
+          format: json
+          params:
+            serviceKey: "${DATA_GO_KR_KEY}"
+            page: 1
+            perPage: 100
+          headers:
+            Accept: "application/json"
+  - name: 데이터 공공포털
+    base_url: "https://api.odcloud.kr/api/3045814/v1"
+    topics:
+      - name: 한국주택금융공사_주택담보노후연금보증 현황
+        type: api
+        category: housing # 주택 시장 자체에 관한 데이터
+        auto_topics:
+          - b46c19ee-e662-44b2-8feb-8da7f47b608e
+          - dbf71e5b-ac68-4e05-929a-ac7d8c60eac7
+          - 79104e8b-f92a-445d-a594-aa162bc4c9cd
+          - d95b9881-d5be-4a04-97cb-8e029e895470
+          - b762b060-2c54-47ac-a817-d4135bd9ef66
+          - f5f58a4c-2c0f-4755-a1dd-f9cbbfe2d633
+          - 21b03e5c-2a03-46ba-84bf-e99290f60455
+          - 5b9a6027-8a8a-4189-91f2-cf1406ca72aa_201712281821
+          - 41a13985-5738-4766-bb14-d874be1ebd25_201712281823
+          - 6ae1ef42-944c-47d7-ba4b-d13143d9f06f_201712281825
+          - 6ae1ef42-944c-47d7-ba4b-d13143d9f06f_201712281825
+          - b20c9ff3-af31-4f11-ad6b-984788361cae_201712281828
+          - b20c9ff3-af31-4f11-ad6b-984788361cae_201712281828
+          - b20c9ff3-af31-4f11-ad6b-984788361cae_201712281828
+          - 0476d14f-1b49-45c0-8311-f54f7183e19f
+          - 225513b9-5cfa-4f64-9e34-a389b2b52d15
+          - a4c081c7-9a12-4db2-94ba-8e4393065eb7
+          - 88fbb7ea-a31c-4444-9045-edef7cd8bb5c
+          - 3b270621-ac72-400d-86f6-a4641555e788
+          - 6fa0f2c3-a935-418a-bbd5-c4ae85bf646a
+          - 998cb95e-cda2-4109-9171-9a40cc05d8c5
+          - 46510f0a-d8fd-4184-94b4-eb13415a6e8e_201910062148
+          - 84c54a0b-0f65-48ac-b6aa-fc628ce75c0d_201910062145
+          - a4b615c3-e6b1-4a50-ad90-ff8a297a738f_201910062141
+          - 8e2d7fe3-5c19-484a-a7ac-b253021aac90_201910062138
+          - c67c1e39-e4f7-4e29-8402-b128e7af0b61_201910062132
+          - 5d05640b-1f00-4ca4-a8e1-c18f6a404502_201910062130
+          - 38787890-446b-4dc9-a285-b79d2b88169a_201910062126
+          - 340a9471-c141-46ca-a780-8ee0328f300b_201910062120
+          - e76debb6-d9aa-4890-be2e-9ccfe190e83c_201910062116
+          - 7b2d57b2-9552-4982-a039-81b2207e1885_201910062111
+          - 4ecdc32e-6b84-48d8-8862-c95a4c7ee4eb_201910062104
+          - 03e649aa-c3f8-47ec-a227-c93669b6dd57_201910062100
+          - c2aa5e79-ddd8-46d8-854f-bf66645deabf_201910062056
+          - 1b3c0674-d9b3-4182-9353-d7c6e4206228_201910062053
+          - 0760a19e-877e-4b93-8748-d8f45a2b34bd_201910062048
+          - 0760a19e-877e-4b93-8748-d8f45a2b34bd_201910062048
+          - 76b3f834-10c9-4dca-b12c-cd25d41f16fb_201910062039
+          - ac21156b-96da-43d7-afc5-8b08dea9e952_201910061430
+          - c066376b-ef65-4896-8e32-94a22f267375_201910061424
+          - e98bf745-549d-488d-a10d-964cecab5ec4_201910061420
+          - d13fcdfe-91cd-4a14-a81a-bc55f8ab3b53_201910061417
+          - 7d8047ac-42df-44bf-acad-a403a469a829_201910061406
+          - 5d693de8-071b-47b2-b55f-99732531770a
+  - name: 데이터 공공포털
+    base_url: "https://api.odcloud.kr/api/15011950/v1"
+    topics:
+      - name: 한국주택금융공사_주택구입자금(중도금대출)보증 현황
+        type: api
+        category: loan # 보증 및 대출 관련 데이터
+        auto_topics:
+          - 4cd6dab5-2bbb-4908-b75a-d365b57ac34a
+          - 4ce28379-a2ae-43e8-a965-fd7878738a1c
+          - 046346da-977d-4009-9ff4-c2ba3593f47d
+          - 088d750d-4c9e-4a54-89ed-a5043c84b422
+          - dbbc14ef-cec2-4443-a71c-b4c0b282d586
+          - 0f33de30-f961-45d1-8ef8-f93a1d7c356f
+          - b9d069b4-0ac1-4f4d-8487-e052f15d34ab
+          - 10d89fb4-193d-4249-8bf8-bf5147938263
+          - f2b4501f-948c-426e-bef2-e10f4147ca2e
+          - a5b4fbe0-0058-4a83-81b9-ef0f75d9f75b
+          - 6a913050-9b00-473c-8c26-a3a236369463
+          - 1203077a-bba5-4387-8e32-9ab15ccc6041
+          - ce8d2d96-8674-4c9e-bb0b-e99537193afe
+          - 4cd6dab5-2bbb-4908-b75a-d365b57ac34a
+          - 4ce28379-a2ae-43e8-a965-fd7878738a1c
+          - 046346da-977d-4009-9ff4-c2ba3593f47d
+          - 088d750d-4c9e-4a54-89ed-a5043c84b422
+          - dbbc14ef-cec2-4443-a71c-b4c0b282d586
+          - 0f33de30-f961-45d1-8ef8-f93a1d7c356f
+          - b9d069b4-0ac1-4f4d-8487-e052f15d34ab
+          - 10d89fb4-193d-4249-8bf8-bf5147938263
+          - f2b4501f-948c-426e-bef2-e10f4147ca2e
+          - a5b4fbe0-0058-4a83-81b9-ef0f75d9f75b
+          - 6a913050-9b00-473c-8c26-a3a236369463
+          - 1203077a-bba5-4387-8e32-9ab15ccc6041
+          - ce8d2d96-8674-4c9e-bb0b-e99537193afe
+          - bb233aed-e070-47c2-a914-9a1783190e9b
+          - 3bf815cb-c9d8-4275-9c3a-9ee7694cd96d
+          - b19b8669-84c1-4bd9-9a77-a941201d8504
+          - 2ecb4507-ceeb-4609-aac7-894388541f43
+          - a0698bf9-6602-472c-9c4e-99d8f03860fc
+  - name: 데이터 공공포털
+    base_url: "https://api.odcloud.kr/api/3045807/v1"
+    topics:
+      - name: 한국주택금융공사_주택금융신용보증 현황
+        type: api
+        category: loan
+        auto_topics:
+          - 96622b46-a101-4669-9bd2-c1d20ae6cfdb
+          - 2840b097-31ef-4b1f-b316-c9df8081e336
+          - 88927ff4-db41-43f9-9785-a62cc1f16b30
+          - f39c67dc-02df-457e-9c2c-b62c8d8d95e
+          - afc0f857-04df-4c16-a621-80c26e1e7d0a
+          - 283dc740-6690-45bd-89e9-c45fe3e09b43
+          - e62468f7-c7e2-4241-873e-f1d45dcbbd18
+          - 49cf680a-4dc4-4a1d-8c47-ab21f3f1663e
+          - 941d2f4d-dbc5-4594-adfd-mdd2176a55d8_201712281750
+          - aaf9d52d-9a24-441c-80b6-8a34d4c5ea48_201712281752
+          - 65d9d5eb-53e3-4e8b-8de7-ala22fcc931_201712281753
+          - dc6438f5-4257-44d7-b61c-ab26391a638d_201712281812
+          - 0f238ef9-5771-4cf6-b8b4-86c322e98a3f_201712281814
+          - 432dd2ca-5f03-4728-90f0-d7dd13ba3a1a_201712281816
+          - 13ffd305-6888-4abf-8589-d2a2a9c3c0aa_201712281818
+          - ade7d672-5406-4bae-a32f-88ba563987fe
+          - 699a6462-a770-4d92-975e-929abb4953be
+          - 8ae6e1e8-84f9-41bd-8ab1-ca073c5f091e
+          - c1cc6642-a15f-4a5e-be5e-eed7bbb19f50
+          - d10dd50f-4e15-42f4-b0f3-a7f635b1633e
+          - 5c576ba9-66d1-4cbc-8642-8f9e8f97f2a2
+          - 0c1ee71d-c3e3-49ba-8f61-89061a8ffab5
+  - name: 데이터 공공포털
+    base_url: "https://api.odcloud.kr/api/3072325/v1"
+    topics:
+      - name: 한국주택금융공사_주택금융관련 지수
+        type: api
+        category: finance
+        auto_topics:
+          - 34300e7e-51d9-4f5f-ade3-a83e766e6b9f
+          - 6b24242b-e715-40be-b9d6-e8e7e9e9a29e
+          - 814378b8-6540-4718-a775-d24d1e0059bc_201712281358
+          - e4f06107-e239-451e-aa76-90e8a9640239_201910021348
+          - 7564aca2-21ab-4e75-beef-b59e117f4fab
+          - f775d278-481d-4ed2-96d3-a3045ac58455
+          - 5fab2ef4-771d-49d9-aeb1-fdc9023c2f68
+          - 306c5123-9a4a-466e-9e6d-95fbaf3567b9
+          - a5cce08e-d8fc-4d06-b2c3-8cc79cf2d216_201910041456
+          - 2e6bdab0-ffaf-4543-bdc4-80b495029360_201910041453
+          - 52792230-c6a8-49cd-888c-c223db1d1af1_201910041448
+          - 603cf150-dcc9-443b-891b-bb8027707065_201910040851
+          - 1187ad78-3933-43e9-92ae-9ed15c7096d8_201910041504
+  - name: 데이터 공공포털
+    base_url: api.odcloud.kr/api
+    topics:
+      - name: 한국주택금융공사_담보정보
+        type: api
+        category: loan
+        api:
+          endpoint: "https://api.odcloud.kr/api/15049755/v1/uddi:23f73b74-6051-458a-9ff8-c7fc84f30328"
+          method: GET
+          format: json
+          params:
+            serviceKey: "${DATA_GO_KR_KEY}"
+            page: 1
+            perPage: 100
+          headers:
+            Accept: "application/json"
+  - name: 데이터 공공포털
+    base_url: api.odcloud.kr/api
+    topics:
+      - name: 한국자산관리공사_담보주택매매 이해관계인 물건현황
+        type: api
+        category: housing
+        api:
+          endpoint: "https://api.odcloud.kr/api/15095482/v1/uddi:53f3c231-b3f9-4d0c-a142-f2583b0b8462"
+          method: GET
+          format: json
+          params:
+            serviceKey: "${DATA_GO_KR_KEY}"
+            page: 1
+            perPage: 100
+          headers:
+            Accept: "application/json"
+  - name: 한국주택금융공사
+    base_url: hf.go.kr
+    topics:
+      - name: 디딤돌대출1
+        type: pdf
+        category: loan
+        url: "file://data/raw/디딤돌대출1.pdf"
+      - name: 디딤돌대출2
+        type: pdf
+        category: loan
+        url: "file://data/raw/디딤돌대출2.pdf"
+      - name: 생애최초 주택구입자 보금자리론
+        type: pdf
+        category: loan
+        url: "file://data/raw/생애최초 주택구입자 보금자리론.pdf"
+      - name: 유한책임 보금자리론
+        type: pdf
+        category: loan
+        url: "file://data/raw/유한책임 보금자리론.pdf"
+      - name: 전세사기피해자 보금자리론
+        type: pdf
+        category: loan
+        url: "file://data/raw/전세사기피해자 보금자리론.pdf"
+      - name: 주택연금 사전예약 보금자리론
+        type: pdf
+        category: loan
+        url: "file://data/raw/주택연금 사전예약 보금자리론.pdf"
