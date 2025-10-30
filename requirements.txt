@@ -1,6 +1,7 @@
 # FastAPI, LangChain, LangGraph, Typer 등 핵심 의존성을 여기에 정리하세요.
-# 예:
-# fastapi==0.110.0
-# uvicorn[standard]==0.28.0
+
+fastapi>=0.115.0,<0.116.0
+uvicorn[standard]>=0.32.0,<0.33.0
+pydantic>=2.9.0,<3.0.0
 # langchain==0.x.x
 # langgraph==0.x.x
