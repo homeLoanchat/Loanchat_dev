@@ -18,3 +18,136 @@
     - 멘토님들께서 어플리케이션 실행을 위해 확인해야 할 환경설정 값 등도 반드시 PR 부가 설명란 혹은 README.md에 작성 부탁 드립니다.
     - **Pull Request에서 제출 후 절대 병합(Merge)하지 않도록 주의하세요!**
     - 수행 및 제출 과정에서 문제가 발생한 경우, 바로 강사님에게 얘기하세요! 
+
+## FastAPI 서버 실행
+
+필수 의존성은 `requirements.txt`에 정리되어 있습니다.
+
+```bash
+uvicorn src.api.main:app --reload
+```
+
+서버가 기동되면 Swagger UI는 `http://localhost:8000/docs`에서 확인 가능합니다.
+
+### 샘플 요청
+
+`intent` 값은 `informational` 또는 `calculational` 두 가지를 지원합니다.
+
+```bash
+http POST :8000/api/chat type=informational message='전세자금대출 한도'
+
+curl -X POST http://localhost:8000/api/chat \
+    -H 'Content-Type: application/json' \
+    -d '{"message":"전세자금대출 한도가 궁금해요","intent":"informational"}'
+```
+
+요청 바디 예시:
+
+```json
+{
+  "message": "대출 한도가 궁금해요",
+  "intent": "informational",
+  "category": "loan_limit"
+}
+```
+
+응답 예시:
+
+```json
+{
+  "success": true,
+  "type": "informational",
+  "category": "loan_limit",
+  "data": {
+    "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
+    "sources": [
+      "https://example.com/loan-guidelines",
+      "https://example.com/credit-score"
+    ],
+    "query": "전세자금대출 한도가 궁금해요"
+  },
+  "metadata": {
+    "mock": true,
+    "generated_at": "2025-10-30T06:52:46.910280Z",
+    "trace_id": "ad7d1c28-6a2c-4a7b-86b7-5d7e65a9f6c3",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "정보형 답변을 생성했습니다."
+      }
+    ]
+  }
+}
+```
+
+헬스체크는 다음 명령으로 확인할 수 있습니다.
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/admin/health
+```
+
+### Mock 서비스 구조
+
+Iteration 2에서는 라우터에서 직접 payload를 구성하지 않고 `ChatService`를 통해
+Mock 모듈을 호출합니다.
+
+- Retrieval Mock: `retriever.run(category, query, *, user_id=None) -> dict`
+- Compute Mock: `compute.run(category, params, *, user_id=None) -> dict`
+
+FastAPI 라우터는 다음과 같이 의존성을 주입받습니다.
+
+```python
+from fastapi import Depends
+
+from src.services import ChatService, get_chat_service
+
+
+@router.post("", response_model=ChatResponse)
+def chat_endpoint(
+    payload: ChatRequest,
+    service: ChatService = Depends(get_chat_service),
+) -> ChatResponse:
+    return service.handle(payload)
+```
+
+향후 실제 Retrieval/Compute 모듈이 준비되면 `get_chat_service()`에서 주입하는
+구현체만 교체하면 됩니다.
+
+## 환경 변수
+
+| 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `PORT` | `8000` | `uvicorn` 실행 포트 |
+| `LOG_LEVEL` | `info` | FastAPI/uvicorn 로그 레벨 |
+| `ENV` | `local` | 실행 환경 플래그 (예: `local`, `dev`, `prod`) |
+| `LOANBOT_ALLOWED_ORIGINS` | `*` | CORS 허용 origin (쉼표로 구분) |
+
+`.env` 파일에 위 변수들을 정의한 뒤 `uvicorn` 실행 시 자동으로 반영됩니다.
+
+## 테스트
+
+```bash
+pytest tests/e2e/test_chat_api.py
+```
+
+테스트는 Mock 서비스 기준으로 `/api/chat` 성공/실패 케이스와 요청 밸리데이션을 검증합니다.
+
+## DI 교체 방법
+
+`src/services/chat_service.py`의 `get_chat_service()`에서 Mock 구현체를 실제
+모듈로 교체하면 됩니다.
+
+```python
+from src.retrieval.module import RetrievalClient
+from src.compute.module import ComputeClient
+
+
+def get_chat_service() -> ChatService:
+    return ChatService(
+        retriever=RetrievalClient(),
+        compute=ComputeClient(),
+    )
+```
+
+FastAPI `Depends(get_chat_service)` 구문 덕분에 라우터 코드를 수정할 필요가
+없습니다.

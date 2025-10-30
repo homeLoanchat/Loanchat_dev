@@ -22,9 +22,12 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
     response_model=HealthResponse,
     response_model_exclude_none=True,
     summary="관리자 헬스체크",
-    description="서비스가 정상 동작 중인지 확인합니다.",
 )
 def read_health() -> HealthResponse:
-    """기본 헬스체크 응답을 반환한다."""
+    """기본 헬스체크 응답."""
 
-    return HealthResponse(timestamp=datetime.now(timezone.utc))
+    # TODO(Iteration 4): core.responses.ok() 적용하여 공통 포맷으로 반환 고려
+    return HealthResponse(
+        timestamp=datetime.now(timezone.utc),
+        version="0.1.0",
+    )

@@ -29,11 +29,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """앱 기동/종료 시 리소스 초기화 및 정리를 담당."""
 
     configure_logging()
-    register_exception_handlers(app)
     yield
 
 
 app = FastAPI(title="LoanBot API", version="0.1.0", lifespan=lifespan)
+
+register_exception_handlers(app)
 
 app.add_middleware(
     CORSMiddleware,
