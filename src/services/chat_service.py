@@ -1,20 +1,16 @@
-"""Chat 서비스 계층.
-
-Iteration 2에서는 라우터에서 비즈니스 로직을 분리하고, 향후 실제
-Retrieval/Compute 모듈을 주입할 수 있는 구조를 마련한다.
-"""
+"""Chat 서비스 계층."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from src.api.schemas import (
-    ChatIntent,
-    ChatRequest,
-    ChatResponse,
-    build_mock_response,
-)
+from src.api.schemas import ChatIntent, ChatRequest, ChatResponse, build_mock_response
+from src.core.exceptions import InvalidValueError
+
+
+INFORMATIONAL_CATEGORIES = {"loan_limit", "interest_rate"}
+CALCULATIONAL_CATEGORIES = {"monthly_payment"}
 
 
 class RetrievalRunner(Protocol):
@@ -54,15 +50,12 @@ class MockRetriever:
         user_id: str | None = None,
     ) -> dict[str, Any]:
         return {
-            "type": ChatIntent.INFORMATIONAL.value,
-            "category": category or "general",
-            "data": {
-                "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
-                "sources": [
-                    "https://example.com/loan-guidelines",
-                    "https://example.com/credit-score",
-                ],
-            },
+            "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
+            "sources": [
+                "https://example.com/loan-guidelines",
+                "https://example.com/credit-score",
+            ],
+            "query": query,
         }
 
 
@@ -77,14 +70,10 @@ class MockCompute:
         user_id: str | None = None,
     ) -> dict[str, Any]:
         return {
-            "type": ChatIntent.CALCULATIONAL.value,
-            "category": category or "general",
-            "data": {
-                "result": 32_500_000,
-                "currency": "KRW",
-                "explanation": "월 상환 가능액과 금리를 기준으로 산출한 예상 대출 한도입니다.",
-                "params": params or {},
-            },
+            "result": 32_500_000,
+            "currency": "KRW",
+            "explanation": "월 상환 가능액과 금리를 기준으로 산출한 예상 대출 한도입니다.",
+            "params": params or {},
         }
 
 
@@ -106,15 +95,36 @@ class ChatService:
         generated_at = datetime.now(timezone.utc)
 
         if request.intent == ChatIntent.INFORMATIONAL:
+            if request.category and request.category not in INFORMATIONAL_CATEGORIES:
+                raise InvalidValueError(
+                    "지원하지 않는 category 입니다.",
+                    field="category",
+                    details={"category": request.category},
+                )
+
             retrieval_payload = self._retriever.run(
                 category=request.category,
                 query=request.message,
             )
             return build_mock_response(
                 intent=request.intent,
-                payload=retrieval_payload,
+                category=request.category,
+                data=retrieval_payload,
                 message="정보형 답변을 생성했습니다.",
                 generated_at=generated_at,
+            )
+
+        if request.category and request.category not in CALCULATIONAL_CATEGORIES:
+            raise InvalidValueError(
+                "지원하지 않는 category 입니다.",
+                field="category",
+                details={"category": request.category},
+            )
+
+        if not request.params:
+            raise InvalidValueError(
+                "계산형 intent에는 params가 필요합니다.",
+                field="params",
             )
 
         compute_payload = self._compute.run(
@@ -123,7 +133,8 @@ class ChatService:
         )
         return build_mock_response(
             intent=request.intent,
-            payload=compute_payload,
+            category=request.category,
+            data=compute_payload,
             message="계산형 답변을 생성했습니다.",
             generated_at=generated_at,
         )

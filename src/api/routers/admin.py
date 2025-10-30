@@ -17,13 +17,17 @@ from src.api.schemas import HealthResponse
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-@router.post("/refresh")
-def trigger_refresh() -> dict[str, str]:
-    """TODO: 지식베이스 리프레시 작업을 트리거하세요."""
-    raise NotImplementedError("refresh 엔드포인트를 구현하세요.")
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    response_model_exclude_none=True,
+    summary="관리자 헬스체크",
+)
+def read_health() -> HealthResponse:
+    """기본 헬스체크 응답."""
 
-
-@router.get("/metrics")
-def read_metrics() -> dict[str, str]:
-    """TODO: 핵심 SLA/토큰 사용량 등을 반환하세요."""
-    raise NotImplementedError("metrics 엔드포인트를 구현하세요.")
+    # TODO(Iteration 4): core.responses.ok() 적용하여 공통 포맷으로 반환 고려
+    return HealthResponse(
+        timestamp=datetime.now(timezone.utc),
+        version="0.1.0",
+    )

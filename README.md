@@ -55,29 +55,27 @@ curl -X POST http://localhost:8000/api/chat \
 
 ```json
 {
-  "result": {
-    "intent": "informational",
-    "payload": {
-      "type": "informational",
-      "content": {
-        "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
-        "sources": [
-          "https://example.com/loan-guidelines",
-          "https://example.com/credit-score"
-        ]
-      }
-    }
+  "success": true,
+  "type": "informational",
+  "category": "loan_limit",
+  "data": {
+    "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
+    "sources": [
+      "https://example.com/loan-guidelines",
+      "https://example.com/credit-score"
+    ],
+    "query": "전세자금대출 한도가 궁금해요"
   },
-  "messages": [
-    {
-      "role": "assistant",
-      "content": "정보형 답변을 생성했습니다."
-    }
-  ],
-  "trace_id": "ad7d1c28-6a2c-4a7b-86b7-5d7e65a9f6c3",
-  "meta": {
+  "metadata": {
     "mock": true,
-    "generated_at": "2025-10-30T06:52:46.910280Z"
+    "generated_at": "2025-10-30T06:52:46.910280Z",
+    "trace_id": "ad7d1c28-6a2c-4a7b-86b7-5d7e65a9f6c3",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "정보형 답변을 생성했습니다."
+      }
+    ]
   }
 }
 ```
@@ -114,3 +112,42 @@ def chat_endpoint(
 
 향후 실제 Retrieval/Compute 모듈이 준비되면 `get_chat_service()`에서 주입하는
 구현체만 교체하면 됩니다.
+
+## 환경 변수
+
+| 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `PORT` | `8000` | `uvicorn` 실행 포트 |
+| `LOG_LEVEL` | `info` | FastAPI/uvicorn 로그 레벨 |
+| `ENV` | `local` | 실행 환경 플래그 (예: `local`, `dev`, `prod`) |
+| `LOANBOT_ALLOWED_ORIGINS` | `*` | CORS 허용 origin (쉼표로 구분) |
+
+`.env` 파일에 위 변수들을 정의한 뒤 `uvicorn` 실행 시 자동으로 반영됩니다.
+
+## 테스트
+
+```bash
+pytest tests/e2e/test_chat_api.py
+```
+
+테스트는 Mock 서비스 기준으로 `/api/chat` 성공/실패 케이스와 요청 밸리데이션을 검증합니다.
+
+## DI 교체 방법
+
+`src/services/chat_service.py`의 `get_chat_service()`에서 Mock 구현체를 실제
+모듈로 교체하면 됩니다.
+
+```python
+from src.retrieval.module import RetrievalClient
+from src.compute.module import ComputeClient
+
+
+def get_chat_service() -> ChatService:
+    return ChatService(
+        retriever=RetrievalClient(),
+        compute=ComputeClient(),
+    )
+```
+
+FastAPI `Depends(get_chat_service)` 구문 덕분에 라우터 코드를 수정할 필요가
+없습니다.
