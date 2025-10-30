@@ -8,18 +8,23 @@ TODO:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+from src.api.schemas import HealthResponse
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-@router.post("/refresh")
-def trigger_refresh() -> dict[str, str]:
-    """TODO: 지식베이스 리프레시 작업을 트리거하세요."""
-    raise NotImplementedError("refresh 엔드포인트를 구현하세요.")
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    response_model_exclude_none=True,
+    summary="관리자 헬스체크",
+    description="서비스가 정상 동작 중인지 확인합니다.",
+)
+def read_health() -> HealthResponse:
+    """기본 헬스체크 응답을 반환한다."""
 
-
-@router.get("/metrics")
-def read_metrics() -> dict[str, str]:
-    """TODO: 핵심 SLA/토큰 사용량 등을 반환하세요."""
-    raise NotImplementedError("metrics 엔드포인트를 구현하세요.")
+    return HealthResponse(timestamp=datetime.now(timezone.utc))

@@ -1,14 +1,49 @@
-"""구조화 로깅 설정.
+"""간단한 구조화 로깅 설정.
 
-TODO:
-1. `structlog` 또는 표준 로깅으로 JSON 로그 포맷을 구성하세요.
-2. Uvicorn/FastAPI 로거와 수준을 일관되게 맞추세요.
-3. 요청 ID/세션 ID 등의 컨텍스트 변수를 바인딩하세요.
+Iteration 0에서는 표준 라이브러리 로깅 설정만 적용한다. 이후 Iteration에서
+JSON 포맷 및 컨텍스트 바인딩을 확장할 예정이다.
 """
 
 from __future__ import annotations
 
+import logging
+from logging.config import dictConfig
+
+_CONFIGURED = False
+
 
 def configure_logging() -> None:
-    """TODO: 애플리케이션 시작 시 호출되는 로깅 초기화 함수를 구현하세요."""
-    raise NotImplementedError("logging 설정을 작성하세요.")
+    """FastAPI 서버 기동 시 한 번만 로깅 구성을 적용한다."""
+
+    global _CONFIGURED
+
+    if _CONFIGURED:
+        return
+
+    dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "default": {
+                    "format": "%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+                }
+            },
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "default",
+                }
+            },
+            "root": {"level": "INFO", "handlers": ["console"]},
+            "loggers": {
+                "uvicorn": {"level": "INFO"},
+                "uvicorn.error": {"level": "INFO"},
+                "uvicorn.access": {"level": "INFO"},
+            },
+        }
+    )
+
+    _CONFIGURED = True
+
+    logging.getLogger(__name__).info("Logging configured")

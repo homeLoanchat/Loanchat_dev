@@ -1,20 +1,47 @@
-"""FastAPI 엔트리 포인트.
-
-TODO:
-1. `FastAPI` 인스턴스를 생성하고 CORS/미들웨어를 설정하세요.
-2. lifespan 이벤트에서 설정 로드, 로거 초기화, 리소스 클린업을 구현하세요.
-3. `src.api.routers`에 정의한 라우터를 include 하세요.
-4. 구조화 로깅과 예외 핸들러를 `src.core` 모듈과 연결하세요.
-"""
+"""FastAPI 엔트리 포인트."""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from os import getenv
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="LoanBot API", version="0.1.0")
+from src.api.routers.admin import router as admin_router
+from src.api.routers.chat import router as chat_router
+from src.core.exceptions import register_exception_handlers
+from src.core.logging import configure_logging
 
 
-@app.get("/health", tags=["health"])
-def health_check() -> dict[str, str]:
-    """기본 헬스 체크 엔드포인트."""
-    return {"status": "ok"}
+def _get_allowed_origins() -> list[str]:
+    """환경변수 기반 허용 origin 리스트 반환."""
+
+    raw = getenv("LOANBOT_ALLOWED_ORIGINS")
+    if not raw:
+        return ["*"]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """앱 기동/종료 시 리소스 초기화 및 정리를 담당."""
+
+    configure_logging()
+    register_exception_handlers(app)
+    yield
+
+
+app = FastAPI(title="LoanBot API", version="0.1.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_get_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(chat_router)
+app.include_router(admin_router)
