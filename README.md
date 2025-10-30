@@ -18,3 +18,99 @@
     - 멘토님들께서 어플리케이션 실행을 위해 확인해야 할 환경설정 값 등도 반드시 PR 부가 설명란 혹은 README.md에 작성 부탁 드립니다.
     - **Pull Request에서 제출 후 절대 병합(Merge)하지 않도록 주의하세요!**
     - 수행 및 제출 과정에서 문제가 발생한 경우, 바로 강사님에게 얘기하세요! 
+
+## FastAPI 서버 실행
+
+필수 의존성은 `requirements.txt`에 정리되어 있습니다.
+
+```bash
+uvicorn src.api.main:app --reload
+```
+
+서버가 기동되면 Swagger UI는 `http://localhost:8000/docs`에서 확인 가능합니다.
+
+### 샘플 요청
+
+`intent` 값은 `informational` 또는 `calculational` 두 가지를 지원합니다.
+
+```bash
+http POST :8000/api/chat type=informational message='전세자금대출 한도'
+
+curl -X POST http://localhost:8000/api/chat \
+    -H 'Content-Type: application/json' \
+    -d '{"message":"전세자금대출 한도가 궁금해요","intent":"informational"}'
+```
+
+요청 바디 예시:
+
+```json
+{
+  "message": "대출 한도가 궁금해요",
+  "intent": "informational",
+  "category": "loan_limit"
+}
+```
+
+응답 예시:
+
+```json
+{
+  "result": {
+    "intent": "informational",
+    "payload": {
+      "type": "informational",
+      "content": {
+        "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
+        "sources": [
+          "https://example.com/loan-guidelines",
+          "https://example.com/credit-score"
+        ]
+      }
+    }
+  },
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "정보형 답변을 생성했습니다."
+    }
+  ],
+  "trace_id": "ad7d1c28-6a2c-4a7b-86b7-5d7e65a9f6c3",
+  "meta": {
+    "mock": true,
+    "generated_at": "2025-10-30T06:52:46.910280Z"
+  }
+}
+```
+
+헬스체크는 다음 명령으로 확인할 수 있습니다.
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/admin/health
+```
+
+### Mock 서비스 구조
+
+Iteration 2에서는 라우터에서 직접 payload를 구성하지 않고 `ChatService`를 통해
+Mock 모듈을 호출합니다.
+
+- Retrieval Mock: `retriever.run(category, query, *, user_id=None) -> dict`
+- Compute Mock: `compute.run(category, params, *, user_id=None) -> dict`
+
+FastAPI 라우터는 다음과 같이 의존성을 주입받습니다.
+
+```python
+from fastapi import Depends
+
+from src.services import ChatService, get_chat_service
+
+
+@router.post("", response_model=ChatResponse)
+def chat_endpoint(
+    payload: ChatRequest,
+    service: ChatService = Depends(get_chat_service),
+) -> ChatResponse:
+    return service.handle(payload)
+```
+
+향후 실제 Retrieval/Compute 모듈이 준비되면 `get_chat_service()`에서 주입하는
+구현체만 교체하면 됩니다.

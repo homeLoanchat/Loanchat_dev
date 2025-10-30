@@ -1,20 +1,31 @@
-"""FastAPI 엔트리 포인트.
-
-TODO:
-1. `FastAPI` 인스턴스를 생성하고 CORS/미들웨어를 설정하세요.
-2. lifespan 이벤트에서 설정 로드, 로거 초기화, 리소스 클린업을 구현하세요.
-3. `src.api.routers`에 정의한 라우터를 include 하세요.
-4. 구조화 로깅과 예외 핸들러를 `src.core` 모듈과 연결하세요.
-"""
+"""FastAPI 엔트리 포인트."""
 
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="LoanBot API", version="0.1.0")
+from src.api.routers.admin import router as admin_router
+from src.api.routers.chat import router as chat_router
 
 
-@app.get("/health", tags=["health"])
-def health_check() -> dict[str, str]:
-    """기본 헬스 체크 엔드포인트."""
-    return {"status": "ok"}
+def create_app() -> FastAPI:
+    """FastAPI 애플리케이션을 구성한다."""
+
+    app = FastAPI(title="LoanBot API", version="0.1.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.include_router(chat_router)
+    app.include_router(admin_router)
+
+    return app
+
+
+app = create_app()
