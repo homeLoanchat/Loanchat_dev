@@ -37,6 +37,17 @@ def test_calculate_ltv_pandas_series() -> None:
     assert result.tolist() == pytest.approx([0.5, 0.5], rel=1e-9)
 
 
+def test_calculate_ltv_sequence_without_pandas(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.compute import engine
+
+    monkeypatch.setattr(engine, "_pd", None)
+    result = calculate_ltv(
+        collateral_value=[700_000, 800_000],
+        loan_amount=[350_000, 400_000],
+    )
+    assert result == pytest.approx([0.5, 0.5], rel=1e-9)
+
+
 def test_calculate_dti_and_dsr_scalar() -> None:
     dti = calculate_dti(annual_income=80_000, total_debt_payment=24_000)
     dsr = calculate_dsr(annual_income=80_000, annual_debt_service=30_000)

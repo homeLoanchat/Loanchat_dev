@@ -1,15 +1,42 @@
 # LoanBot 컨테이너 이미지 빌드용 Dockerfile
-# TODO:
-# 1. slim Python 베이스 이미지 선택 (예: python:3.11-slim).
-# 2. 시스템 패키지 설치(빌드 도구, libmagic 등 필요 시).
-# 3. pip/poetry를 이용해 의존성을 설치하세요.
-# 4. `/app` 디렉터리에 소스 복사 후 `uvicorn` 또는 `gunicorn` 엔트리포인트를 설정하세요.
-# 5. 멀티스테이지 빌드로 이미지 크기를 최적화하세요.
 
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# --- Builder stage: install Python dependencies into a virtualenv ---
+FROM base AS builder
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y build-essential curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
+
+# --- Runtime stage: slim runtime with prebuilt virtualenv ---
+FROM base AS runtime
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/opt/venv/bin:${PATH}"
+
+COPY --from=builder /opt/venv /opt/venv
+
 WORKDIR /app
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app
+
+ENV PORT=8000 \
+    LOG_LEVEL=info \
+    ENV=local
+
 EXPOSE 8000
+
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
