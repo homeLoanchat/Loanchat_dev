@@ -3,3 +3,6 @@ __pycache__/
 *.pyo
 .venv/
 .env
+vectorstore.sqlite3
+chunks.jsonl
+documents.json
