@@ -1,0 +1,10 @@
+chunk:
+  size: 800
+  overlap: 120
+  min_chars: 200
+vectorstore:
+  persist_directory: data/embeddings/chroma
+  collection_name: loan_documents
+reranker:
+  top_k: 5
+  score_key: score

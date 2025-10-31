@@ -144,17 +144,19 @@ class ChatResponse(BaseModel):
     )
 
 
-def build_mock_response(
+def build_chat_response(
     *,
     intent: ChatIntent,
     category: str | None,
     data: dict[str, Any],
     message: str,
     generated_at: datetime,
+    mock: bool,
 ) -> ChatResponse:
-    """Mock 데이터를 이용해 표준 응답 스키마를 생성한다."""
+    """표준 챗봇 응답을 생성한다."""
 
     metadata = ChatMetadata(
+        mock=mock,
         generated_at=generated_at,
         messages=[ChatMessage(role="assistant", content=message)],
     )
@@ -167,11 +169,32 @@ def build_mock_response(
     return ChatResponse(**payload)
 
 
+def build_mock_response(
+    *,
+    intent: ChatIntent,
+    category: str | None,
+    data: dict[str, Any],
+    message: str,
+    generated_at: datetime,
+) -> ChatResponse:
+    """기존 Mock 응답 빌더 (호환용)."""
+
+    return build_chat_response(
+        intent=intent,
+        category=category,
+        data=data,
+        message=message,
+        generated_at=generated_at,
+        mock=True,
+    )
+
+
 __all__ = [
     "ChatIntent",
     "ChatMetadata",
     "ChatMessage",
     "ChatRequest",
     "ChatResponse",
+    "build_chat_response",
     "build_mock_response",
 ]

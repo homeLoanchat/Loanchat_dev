@@ -9,6 +9,7 @@ from .chat import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
+    build_chat_response,
     build_mock_response,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "ChatRequest",
     "ChatResponse",
     "HealthResponse",
+    "build_chat_response",
     "build_mock_response",
 ]
