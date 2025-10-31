@@ -16,7 +16,7 @@ from typing import Mapping
 
 logger = logging.getLogger(__name__)
 
-
+# 벡터스토어 컬렉션 객체
 @dataclass(slots=True)
 class VectorStoreCollection:
     """SQLite 벡터스토어 핸들."""
@@ -27,7 +27,7 @@ class VectorStoreCollection:
     def close(self) -> None:
         self.connection.close()
 
-
+# 벡터스토어 초기화
 def init_vectorstore(
     collection_name: str,
     *,
@@ -46,6 +46,7 @@ def init_vectorstore(
             cursor.execute(f"PRAGMA {key}={value}")
         cursor.close()
 
+    # embeddings 테이블 생성    
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS embeddings (
@@ -66,7 +67,7 @@ def init_vectorstore(
     logger.debug("Vectorstore 초기화: %s (collection=%s)", db_path, collection_name)
     return VectorStoreCollection(connection=connection, name=collection_name)
 
-
+# 벡터 임베딩 업서트
 def upsert_embeddings(
     collection: VectorStoreCollection,
     embeddings: Iterable[Mapping[str, object]],
