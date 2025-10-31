@@ -1,7 +1,13 @@
 # 웹 검색 허용 도메인/경로 패턴 목록
-# - 정책/금융 기관 등 신뢰 가능한 출처를 추가하세요.
-# - 필요 시 정규식 또는 단순 prefix 패턴을 사용하세요.
-# 예:
-# - domain: finance.gov
-#   paths:
-#     - /policy/
+# - 금융 감독/정책 기관 등 신뢰 가능한 출처만 나열합니다.
+# - paths 항목이 없으면 도메인 전체를 허용합니다.
+# - paths는 접두사(prefix) 비교를 수행합니다.
+
+domains:
+  - domain: www.fsc.go.kr      # 금융위원회
+  - domain: www.fss.or.kr      # 금융감독원
+  - domain: www.bok.or.kr      # 한국은행
+  - domain: www.kofia.or.kr    # 금융투자협회
+  - domain: www.kfb.or.kr      # 은행연합회
+  - domain: www.kdic.or.kr     # 예금보험공사
+  - domain: www.koscom.co.kr   # 코스콤 (금융정보)

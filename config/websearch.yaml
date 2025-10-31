@@ -1,0 +1,5 @@
+cache:
+  directory: data/web_cache
+  ttl_seconds: 86400
+provider:
+  max_results: 5

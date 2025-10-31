@@ -36,8 +36,10 @@ async def test_informational_success(client: AsyncClient) -> None:
 
     assert body["success"] is True
     assert body["type"] == "informational"
-    assert body["data"]["answer"].startswith("대출 한도는")
-    assert body["metadata"]["mock"] is True
+    assert isinstance(body["data"].get("answer"), str)
+    assert body["data"].get("query") == "전세자금대출 한도가 궁금해요"
+    assert isinstance(body["data"].get("sources"), list)
+    assert body["metadata"]["mock"] is False
 
 
 @pytest.mark.anyio

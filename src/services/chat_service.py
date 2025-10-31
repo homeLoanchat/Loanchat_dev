@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Protocol
 
-from src.api.schemas import ChatIntent, ChatRequest, ChatResponse, build_mock_response
+from src.api.schemas import (
+    ChatIntent,
+    ChatRequest,
+    ChatResponse,
+    build_chat_response,
+)
 from src.core.exceptions import InvalidValueError
+from src.retrieval.pipeline import RetrievalPipeline
+from src.services.retriever_service import PipelineRetriever
 
 
 INFORMATIONAL_CATEGORIES = {"loan_limit", "interest_rate"}
@@ -42,6 +50,8 @@ class ComputeRunner(Protocol):
 class MockRetriever:
     """Iteration 2에서 사용되는 기본 Mock Retrieval."""
 
+    is_mock = True
+
     def run(
         self,
         *,
@@ -61,6 +71,8 @@ class MockRetriever:
 
 class MockCompute:
     """Iteration 2에서 사용되는 기본 Mock Compute."""
+
+    is_mock = True
 
     def run(
         self,
@@ -106,12 +118,13 @@ class ChatService:
                 category=request.category,
                 query=request.message,
             )
-            return build_mock_response(
+            return build_chat_response(
                 intent=request.intent,
                 category=request.category,
                 data=retrieval_payload,
                 message="정보형 답변을 생성했습니다.",
                 generated_at=generated_at,
+                mock=getattr(self._retriever, "is_mock", False),
             )
 
         if request.category and request.category not in CALCULATIONAL_CATEGORIES:
@@ -131,16 +144,33 @@ class ChatService:
             category=request.category,
             params=request.params,
         )
-        return build_mock_response(
+        return build_chat_response(
             intent=request.intent,
             category=request.category,
             data=compute_payload,
             message="계산형 답변을 생성했습니다.",
             generated_at=generated_at,
+            mock=getattr(self._compute, "is_mock", False),
         )
 
 
+@lru_cache(maxsize=1)
+def _get_retrieval_pipeline() -> RetrievalPipeline:
+    return RetrievalPipeline()
+
+
+@lru_cache(maxsize=1)
+def _get_retriever() -> RetrievalRunner:
+    return PipelineRetriever(pipeline=_get_retrieval_pipeline())
+
+
+@lru_cache(maxsize=1)
+def _get_compute() -> ComputeRunner:
+    return MockCompute()
+
+
+@lru_cache(maxsize=1)
 def get_chat_service() -> ChatService:
     """FastAPI DI에 사용할 기본 ChatService 제공자."""
 
-    return ChatService(retriever=MockRetriever(), compute=MockCompute())
+    return ChatService(retriever=_get_retriever(), compute=_get_compute())
