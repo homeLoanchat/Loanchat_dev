@@ -1,86 +1,86 @@
-"""로컬 SQLite 기반 벡터스토어 유틸.
-
-외부 DB 없이 간단한 프로토타입을 운용하기 위한 경량 구현이다. 실제 프로덕션에서는
-Pinecone, Chroma 등을 사용하는 것으로 교체할 수 있다.
-"""
+"""ChromaDB 기반 벡터스토어 유틸."""
 
 from __future__ import annotations
 
-import json
 import logging
-import sqlite3
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Iterable
-from typing import Mapping
+from typing import Any
+
+import chromadb
+from chromadb.api import ClientAPI
+from chromadb.api.models.Collection import Collection
+from chromadb.config import Settings
 
 logger = logging.getLogger(__name__)
 
-# 벡터스토어 컬렉션 객체
+
 @dataclass(slots=True)
 class VectorStoreCollection:
-    """SQLite 벡터스토어 핸들."""
+    """ChromaDB 컬렉션 핸들."""
 
-    connection: sqlite3.Connection
-    name: str
+    client: ClientAPI
+    collection: Collection
 
     def close(self) -> None:
-        self.connection.close()
+        """클라이언트가 close 메서드를 지원하면 호출."""
+        close_fn = getattr(self.client, "close", None)
+        if callable(close_fn):
+            close_fn()
 
-# 벡터스토어 초기화
+
 def init_vectorstore(
     collection_name: str,
     *,
-    db_path: Path | str = Path("data/embeddings/vectorstore.sqlite3"),
-    pragmas: Mapping[str, str] | None = None,
+    persist_directory: Path | str | None = Path("data/embeddings/chroma"),
+    client: ClientAPI | None = None,
+    client_settings: Settings | None = None,
 ) -> VectorStoreCollection:
-    """로컬 SQLite 벡터스토어를 초기화한다."""
+    """Chroma 컬렉션을 초기화한다.
 
-    db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(db_path))
+    Args:
+        collection_name: 사용할 컬렉션 이름.
+        persist_directory: PersistentClient 저장 경로. None이면 EphemeralClient 사용.
+        client: 외부에서 생성한 클라이언트를 주입할 때 사용.
+        client_settings: 클라이언트 초기화 시 사용할 Settings.
+    """
 
-    if pragmas:
-        cursor = connection.cursor()
-        for key, value in pragmas.items():
-            cursor.execute(f"PRAGMA {key}={value}")
-        cursor.close()
+    if client is None:
+        if persist_directory is None:
+            logger.debug("Chroma EphemeralClient 초기화 (collection=%s)", collection_name)
+            client = chromadb.EphemeralClient(settings=client_settings)
+        else:
+            persist_directory = Path(persist_directory)
+            persist_directory.mkdir(parents=True, exist_ok=True)
+            logger.debug(
+                "Chroma PersistentClient 초기화: %s (collection=%s)",
+                persist_directory,
+                collection_name,
+            )
+            client = chromadb.PersistentClient(path=str(persist_directory), settings=client_settings)
+    else:
+        logger.debug("주입된 Chroma 클라이언트를 사용합니다. (collection=%s)", collection_name)
 
-    # embeddings 테이블 생성    
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS embeddings (
-            collection TEXT NOT NULL,
-            id TEXT NOT NULL,
-            vector TEXT NOT NULL,
-            text TEXT NOT NULL,
-            metadata TEXT NOT NULL,
-            PRIMARY KEY (collection, id)
-        )
-        """
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_embeddings_collection ON embeddings(collection)"
-    )
-    connection.commit()
+    collection = client.get_or_create_collection(name=collection_name)
+    return VectorStoreCollection(client=client, collection=collection)
 
-    logger.debug("Vectorstore 초기화: %s (collection=%s)", db_path, collection_name)
-    return VectorStoreCollection(connection=connection, name=collection_name)
 
-# 벡터 임베딩 업서트
 def upsert_embeddings(
     collection: VectorStoreCollection,
-    embeddings: Iterable[Mapping[str, object]],
+    embeddings: Iterable[Mapping[str, Any]],
 ) -> int:
-    """벡터 임베딩을 업서트한다."""
+    """벡터 임베딩을 Chroma 컬렉션에 업서트한다."""
 
-    rows: list[tuple[str, str, str, str, str]] = []
+    ids: list[str] = []
+    vectors: list[Sequence[float]] = []
+    documents: list[str] = []
+    metadatas: list[dict[str, Any]] = []
+
     for item in embeddings:
         try:
             identifier = str(item["id"])
             vector = item["vector"]
-            text = str(item.get("text", ""))
-            metadata = item.get("metadata", {})
         except KeyError as exc:
             raise ValueError("id, vector 키는 필수입니다.") from exc
 
@@ -90,27 +90,41 @@ def upsert_embeddings(
             raise TypeError("vector는 Iterable[float] 이어야 합니다.")
 
         vector_list = [float(value) for value in vector]
-        vector_json = json.dumps(vector_list)
-        metadata_json = json.dumps(metadata, ensure_ascii=False)
-        rows.append((collection.name, identifier, vector_json, text, metadata_json))
+        text = str(item.get("text", ""))
+        metadata_raw = item.get("metadata", {})
+        metadata = _normalize_metadata(metadata_raw)
 
-    if not rows:
+        ids.append(identifier)
+        vectors.append(vector_list)
+        documents.append(text)
+        metadatas.append(metadata)
+
+    if not ids:
         logger.info("업서트할 임베딩이 없습니다.")
         return 0
 
-    connection = collection.connection
-    connection.executemany(
-        """
-        INSERT INTO embeddings (collection, id, vector, text, metadata)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(collection, id)
-        DO UPDATE SET vector=excluded.vector,
-                      text=excluded.text,
-                      metadata=excluded.metadata
-        """,
-        rows,
+    collection.collection.upsert(
+        ids=ids,
+        embeddings=vectors,
+        documents=documents,
+        metadatas=metadatas,
     )
-    connection.commit()
+    logger.info("Chroma 업서트 완료: %d개", len(ids))
+    return len(ids)
 
-    logger.info("벡터스토어 업서트 완료: %d개", len(rows))
-    return len(rows)
+
+def _normalize_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Chroma 호환 형태로 메타데이터를 정규화한다."""
+
+    if not metadata:
+        return {}
+
+    normalized: dict[str, Any] = {}
+    for key, value in metadata.items():
+        if value is None or isinstance(value, (str, int, float, bool)):
+            normalized[str(key)] = value
+        elif isinstance(value, (list, tuple)):
+            normalized[str(key)] = [str(item) for item in value]
+        else:
+            normalized[str(key)] = str(value)
+    return normalized
