@@ -1,30 +1,36 @@
-
+version: "3.9"
 
 services:
   api:
-    # TODO: 빌드 컨텍스트와 Dockerfile 경로를 지정하세요.
     build:
       context: .
       dockerfile: Dockerfile
     container_name: loanbot-api
+    env_file:
+      - .env
     environment:
-      # TODO: 필요한 환경변수를 여기에 나열하세요.
-      - APP_ENV=local
+      - ENV=${ENV:-local}
+      - PORT=${PORT:-8000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOANBOT_ALLOWED_ORIGINS=${LOANBOT_ALLOWED_ORIGINS:-*}
+      - DATA_GO_KR_KEY=${DATA_GO_KR_KEY:-}
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     volumes:
-      # TODO: 개발 시 필요한 볼륨 마운트를 선언하세요.
-      - ./api:/app
+      - ./:/app
     command: >-
       uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
-      - vectorstore
+      vectorstore:
+        condition: service_started
 
   vectorstore:
-    # TODO: Chroma 혹은 기타 백엔드를 컨테이너로 운영한다면 설정하세요.
     image: chromadb/chroma:latest
+    container_name: loanbot-vectorstore
+    env_file:
+      - .env
     volumes:
       - ./data/embeddings:/data
     ports:
       - "8001:8000"
-    # 필요 없으면 이 서비스 정의를 삭제하거나 주석 처리하세요.
+    restart: unless-stopped
