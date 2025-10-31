@@ -4,5 +4,10 @@ __pycache__/
 .venv/
 .env
 vectorstore.sqlite3
-chunks.jsonl
-documents.json
+*.chunks.jsonl
+*.documents.json
+chroma.sqlite3
+data_level0.bin
+header.bin
+length.bin
+link_lists.bin

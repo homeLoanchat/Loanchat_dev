@@ -76,8 +76,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--vectorstore-path",
         type=Path,
-        default=Path("data/embeddings/vectorstore.sqlite3"),
-        help="벡터스토어 SQLite 파일 경로",
+        default=Path("data/embeddings/chroma"),
+        help="Chroma 퍼시스턴스 디렉터리 경로",
     )
     parser.add_argument(
         "--collection-name",
@@ -198,8 +198,7 @@ def store_embeddings(
     try:
         collection = init_vectorstore(
             collection_name,
-            db_path=vectorstore_path,
-            pragmas={"journal_mode": "WAL", "synchronous": "NORMAL"},
+            persist_directory=vectorstore_path,
         )
         payload = [
             {

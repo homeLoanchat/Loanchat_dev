@@ -177,7 +177,7 @@ def derive_title(source_path: Path) -> str:
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
-def make_document_id(metadata: dict[str, Any]) -> str
+def make_document_id(metadata: dict[str, Any]) -> str:
     """문서 고유 ID 생성"""
     base = f"{metadata['doc_source']}::{metadata['doc_modified_at']}"
     digest = hashlib.sha1(base.encode("utf-8")).hexdigest()
