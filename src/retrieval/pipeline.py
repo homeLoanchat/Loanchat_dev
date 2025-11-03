@@ -15,6 +15,7 @@ from src.retrieval.document_loader import (
     load_documents,
     write_chunks,
 )
+from src.retrieval.embedding import EmbeddingClient, create_embedder
 from src.retrieval.vectorstore import VectorStoreCollection, init_vectorstore, upsert_embeddings
 
 logger = logging.getLogger(__name__)
@@ -38,8 +39,14 @@ class IngestResult:
 class RetrievalPipeline:
     """문서 로딩 → 청킹 → 임베딩 저장 → 리랭킹 흐름을 조립한다."""
 
-    def __init__(self, config: RetrievalConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: RetrievalConfig | None = None,
+        *,
+        embedder: EmbeddingClient | None = None,
+    ) -> None:
         self._config = config or load_retrieval_config()
+        self._embedder = embedder or create_embedder(self._config.embedding)
 
     @property
     def config(self) -> RetrievalConfig:
@@ -80,7 +87,7 @@ class RetrievalPipeline:
 
         upserted = 0
         if not skip_vectorstore and chunks:
-            embeddings = embed_chunks(chunks)
+            embeddings = self._build_embedding_records(chunks)
             upserted = store_embeddings(
                 embeddings,
                 vectorstore_path=self._config.vectorstore.persist_directory,
@@ -119,7 +126,12 @@ class RetrievalPipeline:
         limit = limit or self._config.reranker.top_k or 5
         limit = max(limit, 1)
 
-        vector = hash_vector(query)
+        vectors = self._embed_texts([query])
+        if not vectors:
+            logger.warning("임베딩 생성 실패로 검색을 중단합니다.")
+            return []
+        vector = vectors[0]
+
         collection: VectorStoreCollection | None = None
         try:
             collection = init_vectorstore(
@@ -129,7 +141,7 @@ class RetrievalPipeline:
             response = collection.collection.query(
                 query_embeddings=[vector],
                 n_results=limit,
-                include=["ids", "documents", "metadatas", "distances"],
+                include=["documents", "metadatas", "distances"],
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("벡터스토어 조회 실패: %s", exc)
@@ -143,28 +155,33 @@ class RetrievalPipeline:
             return []
         return self.rerank(candidates)
 
+    def _embed_texts(self, texts: Sequence[str]) -> list[Sequence[float]]:
+        vectors = self._embedder.embed(texts)
+        if not vectors:
+            return []
+        if len(vectors) != len(texts):
+            raise RuntimeError("임베딩 결과 수가 입력 텍스트 수와 일치하지 않습니다.")
+        return vectors
 
-def embed_chunks(chunks: Sequence[DocumentChunk]) -> list[EmbeddingRecord]:
-    records: list[EmbeddingRecord] = []
-    for chunk in chunks:
-        vector = hash_vector(chunk.text)
-        records.append(
-            EmbeddingRecord(
-                chunk_id=chunk.chunk_id,
-                vector=vector,
-                text=chunk.text,
-                metadata=chunk.metadata,
+    def _build_embedding_records(
+        self,
+        chunks: Sequence[DocumentChunk],
+    ) -> list[EmbeddingRecord]:
+        texts = [chunk.text for chunk in chunks]
+        vectors = self._embed_texts(texts)
+        records: list[EmbeddingRecord] = []
+        for chunk, vector in zip(chunks, vectors, strict=True):
+            records.append(
+                EmbeddingRecord(
+                    chunk_id=chunk.chunk_id,
+                    vector=vector,
+                    text=chunk.text,
+                    metadata=chunk.metadata,
+                )
             )
-        )
-    logger.info("임베딩 생성 완료: %d개", len(records))
-    return records
-
-
-def hash_vector(value: str) -> list[float]:
-    import hashlib
-
-    digest = hashlib.sha256(value.encode("utf-8")).digest()
-    return [byte / 255.0 for byte in digest]
+        validate_embedding_records(records)
+        logger.info("임베딩 생성 완료: %d개", len(records))
+        return records
 
 
 def store_embeddings(
@@ -188,6 +205,7 @@ def store_embeddings(
             }
             for record in embeddings
         ]
+        validate_embedding_payload(payload)
         return upsert_embeddings(collection, payload)
     finally:
         if collection is not None:
@@ -278,13 +296,46 @@ def _distance_to_score(distance: Any) -> float:
     return 1.0 / (1.0 + value)
 
 
+def validate_embedding_records(records: Sequence[EmbeddingRecord]) -> None:
+    if not records:
+        raise ValueError("임베딩 레코드가 비어 있습니다.")
+
+    vector_length: int | None = None
+    for record in records:
+        if not record.vector:
+            raise ValueError(f"임베딩 벡터가 비어 있습니다: {record.chunk_id}")
+        current_length = len(record.vector)
+        if vector_length is None:
+            vector_length = current_length
+        elif vector_length != current_length:
+            raise ValueError("임베딩 벡터 길이가 일관되지 않습니다.")
+        if not record.metadata.get("chunk_id"):
+            raise ValueError(
+                f"chunk 메타데이터에 chunk_id가 없습니다: {record.chunk_id}",
+            )
+
+
+def validate_embedding_payload(payload: Sequence[dict[str, Any]]) -> None:
+    for item in payload:
+        vector = item.get("vector")
+        if not isinstance(vector, list) or not vector:
+            raise ValueError("벡터 정보가 올바르지 않습니다.")
+        if any(not isinstance(value, (int, float)) for value in vector):
+            raise ValueError("벡터 값은 숫자여야 합니다.")
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            raise ValueError("메타데이터는 dict 형태여야 합니다.")
+        if metadata.get("chunk_id") != item.get("id"):
+            raise ValueError("chunk_id와 id가 일치하지 않습니다.")
+
+
 __all__ = [
     "EmbeddingRecord",
     "IngestResult",
     "RetrievalPipeline",
-    "embed_chunks",
-    "hash_vector",
     "load_retrieval_config",
     "store_embeddings",
+    "validate_embedding_payload",
+    "validate_embedding_records",
     "write_document_metadata",
 ]
