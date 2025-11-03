@@ -63,22 +63,6 @@ class ChatMessage(BaseModel):
     content: str = Field(..., description="메시지 본문")
 
 
-class RetrievalConfidence(BaseModel):
-    """검색 결과의 신뢰도 정보."""
-
-    passed: bool = Field(..., description="임계치 충족 여부")
-    reason: str | None = Field(default=None, description="임계치를 통과하지 못한 경우 원인")
-    top_score: float | None = Field(default=None, description="최상위 문서 점수")
-    top_score_normalized: float | None = Field(default=None, description="정규화된 최상위 점수")
-    top_document_id: str | None = Field(default=None, description="최상위 문서 식별자")
-    hits: int = Field(..., description="검색된 문서 수")
-    thresholds: dict[str, float | int] = Field(
-        default_factory=dict, description="임계치 기준값(min_score 등)"
-    )
-
-    model_config = ConfigDict(extra="allow")
-
-
 class ChatMetadata(BaseModel):
     """챗봇 응답 메타데이터."""
 
@@ -87,9 +71,6 @@ class ChatMetadata(BaseModel):
     trace_id: UUID = Field(default_factory=uuid4, description="트레이싱 식별자")
     messages: list[ChatMessage] = Field(
         default_factory=list, description="사용자에게 노출할 메시지 목록"
-    )
-    confidence: RetrievalConfidence | None = Field(
-        default=None, description="검색 결과 신뢰도 평가 정보"
     )
 
 
@@ -171,7 +152,6 @@ def build_chat_response(
     message: str,
     generated_at: datetime,
     mock: bool,
-    confidence: dict[str, Any] | RetrievalConfidence | None = None,
 ) -> ChatResponse:
     """표준 챗봇 응답을 생성한다."""
 
@@ -179,7 +159,6 @@ def build_chat_response(
         mock=mock,
         generated_at=generated_at,
         messages=[ChatMessage(role="assistant", content=message)],
-        confidence=confidence,
     )
     payload = ok(
         data=data,
@@ -190,50 +169,6 @@ def build_chat_response(
     return ChatResponse(**payload)
 
 
-class InfoPreview(BaseModel):
-    """정보형 orchestration 미리보기."""
-
-    answer: str | None = Field(default=None, description="Retrieval 요약/답변")
-    sources: list[str] = Field(default_factory=list, description="출처 목록")
-    confidence: RetrievalConfidence | None = Field(
-        default=None, description="검색 신뢰도 정보"
-    )
-    documents: list[dict[str, Any]] = Field(
-        default_factory=list, description="Retrieval 내부 문서 후보"
-    )
-    web_results: list[dict[str, Any]] = Field(
-        default_factory=list, description="외부 검색 결과"
-    )
-    data: dict[str, Any] = Field(
-        default_factory=dict, description="원본 Retrieval 결과"
-    )
-
-
-class CalcPreview(BaseModel):
-    """계산형 orchestration 미리보기."""
-
-    summary: str | None = Field(default=None, description="계산 결과 요약")
-    policy: dict[str, Any] | None = Field(default=None, description="적용된 정책 정보")
-    repayment: dict[str, Any] | None = Field(
-        default=None, description="상환 스케줄 등 계산 결과"
-    )
-    inputs: dict[str, Any] = Field(default_factory=dict, description="사용자 입력 파라미터")
-    confidence: dict[str, Any] | None = Field(
-        default=None, description="계산 결과에 대한 부가 신뢰도 정보"
-    )
-    data: dict[str, Any] = Field(
-        default_factory=dict, description="원본 계산 결과 데이터"
-    )
-
-
-class OrchestrationPreview(BaseModel):
-    """Orchestration 흐름 미리보기 응답."""
-
-    mode: Literal["info", "calc"] = Field(..., description="선택된 실행 모드")
-    info: InfoPreview | None = Field(default=None, description="정보형 미리보기")
-    calc: CalcPreview | None = Field(default=None, description="계산형 미리보기")
-
-
 def build_mock_response(
     *,
     intent: ChatIntent,
@@ -241,7 +176,6 @@ def build_mock_response(
     data: dict[str, Any],
     message: str,
     generated_at: datetime,
-    confidence: dict[str, Any] | RetrievalConfidence | None = None,
 ) -> ChatResponse:
     """기존 Mock 응답 빌더 (호환용)."""
 
@@ -252,7 +186,6 @@ def build_mock_response(
         message=message,
         generated_at=generated_at,
         mock=True,
-        confidence=confidence,
     )
 
 
@@ -262,10 +195,6 @@ __all__ = [
     "ChatMessage",
     "ChatRequest",
     "ChatResponse",
-    "InfoPreview",
-    "CalcPreview",
-    "OrchestrationPreview",
     "build_chat_response",
     "build_mock_response",
-    "RetrievalConfidence",
 ]

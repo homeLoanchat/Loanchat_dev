@@ -40,10 +40,6 @@ async def test_informational_success(client: AsyncClient) -> None:
     assert body["data"].get("query") == "전세자금대출 한도가 궁금해요"
     assert isinstance(body["data"].get("sources"), list)
     assert body["metadata"]["mock"] is False
-    confidence = body["metadata"].get("confidence")
-    assert confidence and isinstance(confidence, dict)
-    assert isinstance(confidence.get("passed"), bool)
-    assert "thresholds" in confidence
 
 
 @pytest.mark.anyio
@@ -63,55 +59,8 @@ async def test_calculational_success(client: AsyncClient) -> None:
 
     assert body["success"] is True
     assert body["type"] == "calculational"
-    assert "summary" in body["data"]
-    assert "policy" in body["data"]
-    assert body["data"]["repayment"]["term_months"] == 36
-    assert body["metadata"]["mock"] is False
-
-
-@pytest.mark.anyio
-async def test_orchestration_preview_info(client: AsyncClient) -> None:
-    response = await client.post(
-        "/api/chat/preview",
-        json={
-            "message": "전세자금대출 한도가 궁금해요",
-            "intent": "informational",
-            "category": "loan_limit",
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-
-    assert body["mode"] == "info"
-    assert body["info"]["answer"]
-    assert isinstance(body["info"]["sources"], list)
-    if body["info"].get("confidence"):
-        assert isinstance(body["info"]["confidence"]["passed"], bool)
-
-
-@pytest.mark.anyio
-async def test_orchestration_preview_calc(client: AsyncClient) -> None:
-    response = await client.post(
-        "/api/chat/preview",
-        json={
-            "message": "상환 계획 알려줘",
-            "intent": "calculational",
-            "category": "monthly_payment",
-            "params": {
-                "loan_amount": 30_000_000,
-                "rate": 5.5,
-                "term_months": 36,
-            },
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-
-    assert body["mode"] == "calc"
-    assert body["calc"]["summary"]
-    assert body["calc"]["repayment"]["term_months"] == 36
+    assert body["data"]["result"] == 32_500_000
+    assert body["metadata"]["mock"] is True
 
 
 @pytest.mark.anyio
