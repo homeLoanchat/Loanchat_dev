@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from src.retrieval.config import ConfidenceConfig
 from src.retrieval.pipeline import RetrievalPipeline
 from src.websearch.config import WebSearchConfig, load_websearch_config
 from src.websearch.search import SearchProvider, search_web
@@ -20,6 +21,7 @@ class RetrieverResult:
     documents: list[dict[str, Any]]
     web_results: list[dict[str, Any]]
     query: str
+    confidence: dict[str, Any]
 
 
 class PipelineRetriever:
@@ -35,6 +37,7 @@ class PipelineRetriever:
         web_config: WebSearchConfig | None = None,
     ) -> None:
         self._pipeline = pipeline
+        self._confidence: ConfidenceConfig = pipeline.config.confidence
         self._web_provider = web_provider
         self._web_config = web_config or (load_websearch_config() if web_provider else None)
 
@@ -45,11 +48,24 @@ class PipelineRetriever:
         query: str,
         user_id: str | None = None,
     ) -> dict[str, Any]:
+        logger.debug("PipelineRetriever.run start category=%s query=%s", category, query)
         documents = self._pipeline.search(query)
         web_results = self._search_web(query)
 
-        answer = _compose_answer(documents, web_results)
-        sources = _collect_sources(documents, web_results)
+        confidence = self._evaluate_confidence(documents)
+        if confidence["passed"]:
+            answer = _compose_answer(documents, web_results)
+            sources = _collect_sources(documents, web_results)
+        else:
+            logger.info(
+                "Retriever confidence threshold not met reason=%s top_score=%s normalized=%s hits=%s",
+                confidence.get("reason"),
+                confidence.get("top_score"),
+                confidence.get("top_score_normalized"),
+                confidence.get("hits"),
+            )
+            answer = "질문과 직접 일치하는 근거를 찾지 못했습니다. 추가 정보를 제공해 주시면 더 정확히 안내드릴 수 있어요."
+            sources = []
 
         return {
             "answer": answer,
@@ -58,6 +74,7 @@ class PipelineRetriever:
             "sources": sources,
             "documents": documents,
             "web_results": web_results,
+            "confidence": confidence,
         }
 
     def _search_web(self, query: str) -> list[dict[str, Any]]:
@@ -68,6 +85,54 @@ class PipelineRetriever:
         except Exception as exc:  # noqa: BLE001
             logger.exception("웹 검색 실패: %s", exc)
             return []
+
+    def _evaluate_confidence(self, documents: list[dict[str, Any]]) -> dict[str, Any]:
+        """검색 결과 기반으로 신뢰도를 계산한다."""
+
+        thresholds = {
+            "min_score": self._confidence.min_score,
+            "min_score_normalized": self._confidence.min_score_normalized,
+            "min_hits": self._confidence.min_hits,
+        }
+
+        if not documents:
+            return {
+                "passed": False,
+                "reason": "no_candidates",
+                "top_score": None,
+                "top_score_normalized": None,
+                "top_document_id": None,
+                "hits": 0,
+                "thresholds": thresholds,
+            }
+
+        top = documents[0] if documents else {}
+        top_score = float(top.get("score") or 0.0)
+        top_score_normalized = float(top.get("score_normalized") or 0.0)
+        hits = len(documents)
+
+        meets_hits = hits >= thresholds["min_hits"]
+        meets_score = top_score >= thresholds["min_score"]
+        meets_score_norm = top_score_normalized >= thresholds["min_score_normalized"]
+        passed = all((meets_hits, meets_score, meets_score_norm))
+
+        reasons: list[str] = []
+        if not meets_hits:
+            reasons.append("not_enough_hits")
+        if not meets_score:
+            reasons.append("score_below_threshold")
+        if not meets_score_norm:
+            reasons.append("normalized_score_below_threshold")
+
+        return {
+            "passed": passed,
+            "reason": ",".join(reasons) if reasons else None,
+            "top_score": top_score,
+            "top_score_normalized": top_score_normalized,
+            "top_document_id": top.get("id"),
+            "hits": hits,
+            "thresholds": thresholds,
+        }
 
 
 def _collect_sources(

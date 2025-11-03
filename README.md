@@ -86,13 +86,10 @@ curl -X POST http://localhost:8000/api/chat \
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/admin/health
 ```
 
-### Mock 서비스 구조
+### 서비스 구성
 
-Iteration 2에서는 라우터에서 직접 payload를 구성하지 않고 `ChatService`를 통해
-Mock 모듈을 호출합니다.
-
-- Retrieval Mock: `retriever.run(category, query, *, user_id=None) -> dict`
-- Compute Mock: `compute.run(category, params, *, user_id=None) -> dict`
+`ChatService`는 FastAPI 라우터에 의존성으로 주입되어 intent에 따라 Retrieval/Compute 경로를 실행합니다.  
+Retrieval은 `PipelineRetriever`가 CRAG 임계치(최소 점수/결과 수)를 적용해 신뢰도 정보를 산출하며, Compute는 `LoanComputationService`가 정책 테이블과 계산 엔진을 결합해 한도/상환/비율 정보를 생성합니다.
 
 FastAPI 라우터는 다음과 같이 의존성을 주입받습니다.
 
@@ -110,8 +107,8 @@ def chat_endpoint(
     return service.handle(payload)
 ```
 
-향후 실제 Retrieval/Compute 모듈이 준비되면 `get_chat_service()`에서 주입하는
-구현체만 교체하면 됩니다.
+Retrieval의 신뢰도 평가는 응답 `metadata.confidence`에 기록되고, 계산형 응답은 `LoanComputationService`에서 산출한 월 상환액/비율 정보가 포함됩니다.
+추가로 `/api/chat/preview` 엔드포인트는 `mode`(`info`/`calc`)에 따라 공통 구조의 미리보기 응답을 제공해, 검색 근거와 계산 결과를 사전에 확인할 수 있습니다.
 
 ## 환경 변수
 
@@ -128,26 +125,18 @@ def chat_endpoint(
 
 ```bash
 pytest tests/e2e/test_chat_api.py
+pytest tests/unit/test_composer.py
 ```
-
-테스트는 Mock 서비스 기준으로 `/api/chat` 성공/실패 케이스와 요청 밸리데이션을 검증합니다.
 
 ## DI 교체 방법
 
-`src/services/chat_service.py`의 `get_chat_service()`에서 Mock 구현체를 실제
-모듈로 교체하면 됩니다.
+`src/services`에서 제공하는 `get_retriever()`/`get_compute()`를 FastAPI dependency override로 교체하면 됩니다.
 
 ```python
-from src.retrieval.module import RetrievalClient
-from src.compute.module import ComputeClient
+from src.services import get_compute, get_retriever
 
-
-def get_chat_service() -> ChatService:
-    return ChatService(
-        retriever=RetrievalClient(),
-        compute=ComputeClient(),
-    )
+app.dependency_overrides[get_retriever] = lambda: MyRetriever()
+app.dependency_overrides[get_compute] = lambda: MyCompute()
 ```
 
-FastAPI `Depends(get_chat_service)` 구문 덕분에 라우터 코드를 수정할 필요가
-없습니다.
+라우터 구현은 그대로 유지됩니다.

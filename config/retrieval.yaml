@@ -8,3 +8,7 @@ vectorstore:
 reranker:
   top_k: 5
   score_key: score
+confidence:
+  min_score: 0.05
+  min_score_normalized: 0.2
+  min_hits: 1

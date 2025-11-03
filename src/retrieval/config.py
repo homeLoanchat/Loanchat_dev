@@ -31,16 +31,25 @@ class RerankerConfig:
 
 
 @dataclass(frozen=True)
+class ConfidenceConfig:
+    min_score: float
+    min_score_normalized: float
+    min_hits: int
+
+
+@dataclass(frozen=True)
 class RetrievalConfig:
     chunk: ChunkConfig
     vectorstore: VectorStoreConfig
     reranker: RerankerConfig
+    confidence: ConfidenceConfig
 
     @classmethod
     def from_mapping(cls, payload: dict[str, Any]) -> "RetrievalConfig":
         chunk_payload = payload.get("chunk", {})
         vectorstore_payload = payload.get("vectorstore", {})
         reranker_payload = payload.get("reranker", {})
+        confidence_payload = payload.get("confidence", {})
 
         chunk = ChunkConfig(
             size=int(chunk_payload.get("size", 800)),
@@ -55,7 +64,12 @@ class RetrievalConfig:
             top_k=int(reranker_payload.get("top_k", 5)),
             score_key=str(reranker_payload.get("score_key", "score")),
         )
-        return cls(chunk=chunk, vectorstore=vectorstore, reranker=reranker)
+        confidence = ConfidenceConfig(
+            min_score=float(confidence_payload.get("min_score", 0.0)),
+            min_score_normalized=float(confidence_payload.get("min_score_normalized", 0.0)),
+            min_hits=int(confidence_payload.get("min_hits", 0)),
+        )
+        return cls(chunk=chunk, vectorstore=vectorstore, reranker=reranker, confidence=confidence)
 
 
 def load_retrieval_config(path: Path | str | None = None) -> RetrievalConfig:
@@ -74,6 +88,7 @@ __all__ = [
     "ChunkConfig",
     "VectorStoreConfig",
     "RerankerConfig",
+    "ConfidenceConfig",
     "RetrievalConfig",
     "load_retrieval_config",
 ]
