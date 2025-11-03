@@ -1,4 +1,3 @@
-
 """Compute 서비스 계층."""
 
 from __future__ import annotations
@@ -183,6 +182,7 @@ class ComputeService:
 @lru_cache(maxsize=1)
 def get_compute_service() -> ComputeService:
     return ComputeService()
+
 
 
 __all__ = ["ComputeService", "get_compute_service"]

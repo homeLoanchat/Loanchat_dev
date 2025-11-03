@@ -1,44 +1,67 @@
 # 응답 조립(composer) 프롬프트
-# - 검색된 문서, 계산 결과를 종합하여 답변 구조(서론/핵심/주의사항)를 안내하세요.
-# - 금융 관련 주의/면책 문구 템플릿을 포함하세요.
-# - JSON/마크다운 등 응답 포맷 요구사항이 있다면 명시하세요.
+# - 정보형: 내부 문서 요약 → 웹 검색 보강 → 출처 링크 → 주의사항 순으로 구성하세요.
+# - 계산형: 계산 가정/결과/정책/상환 요약을 카드 형태로 제시하고 면책 문구를 포함하세요.
+# - 응답은 Markdown을 사용하며 bullet과 굵은 텍스트를 적절히 배치하세요.
 
 {% if mode == "calc" %}
- **계산 결과**
+**계산 결과 요약**
+- {{ calc.summary or summary }}
+{% if calc.limit %}
+- 예상 대출 한도: **{{ calc.limit | default("-") }}**
+{% endif %}
+{% if calc.monthly_payment %}
+- 예상 월 상환액: **{{ calc.monthly_payment | default("-") }}**
+{% endif %}
+{% if calc.term_years %}
+- 상환 기간: {{ calc.term_years }}년 ({{ calc.term_months }}개월)
+{% endif %}
 
-- 예상 대출 한도는 **약 {{ limit_kr }}원**입니다.
-- 적용 금리는 **연 {{ rate | round(2) }}%**, 상환 방식은 **{{ term_years }}년({{ term_years*12 }}개월) {{ repay_type }}** 기준입니다.
-- 이 조건이라면 매월 상환액은 **약 {{ monthly_kr }}원**, 총 이자 부담은 **약 {{ total_interest_kr }}원**으로 예상됩니다.
-> 계산은 외부 계산엔진의 산출 결과를 기준으로 했습니다.
+**정책 및 가정**
+{% if calc.policy %}
+- 정책 정보:
+{% for key, value in calc.policy.items() %}
+  - {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+{% if calc.assumptions %}
+- 가정: {{ calc.assumptions | join(", ") }}
+{% endif %}
 
- **설명 및 근거**
-{{ rationale }}
-
- **출처**
-{% for s in sources %}- {{ s.name }} ({{ s.date }})
+**출처**
+{% for src in calc.sources %}- {{ src }}
+{% else %}- 계산 엔진 산출 결과 기준
 {% endfor %}
 
-**한 줄 요약** {{ one_liner }}
-{% if assumptions and assumptions|length > 0 %}
- **Assumptions**: {{ assumptions | join(", ") }}
-{% endif %}
+> 본 결과는 참고용이며 실제 한도와 금리는 금융기관 심사 결과에 따라 달라질 수 있습니다.
 
-**유의사항**
-- 본 결과는 참고용이며 실제 한도와 금리는 금융기관 심사 결과에 따라 달라질 수 있다.
-- 개인정보는 입력·출력·로그에 저장하지 않는다.
-{% endif %}
-
-{% if mode == "info" %}
+{% else %}
 **요약**
 {{ summary }}
 
-**핵심 내용**
-{{ details }}
+{% if info.documents %}
+**내부 문서**
+{% for item in info.documents %}
+- {% if item.url %}[{{ item.title }}]({{ item.url }}){% else %}{{ item.title }}{% endif %}{% if item.snippet %}: {{ item.snippet }}{% endif %}
+{% endfor %}
+{% endif %}
 
- **출처**
-{% for s in sources %}- {{ s.name }} ({{ s.date }})
+{% if info.web %}
+**웹 검색 보강**
+{% for item in info.web %}
+- {% if item.url %}[{{ item.title }}]({{ item.url }}){% else %}{{ item.title }}{% endif %}{% if item.snippet %}: {{ item.snippet }}{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if confidence %}
+**신뢰도**
+- 점수: {{ confidence.score | default("-") }}
+{% if confidence.reason %}- 사유: {{ confidence.reason }}{% endif %}
+{% endif %}
+
+**출처 목록**
+{% for src in info.sources %}- {{ src }}
+{% else %}- 일치하는 내부 문서가 부족하여 요약 정보만 제공합니다.
 {% endfor %}
 
-**유의사항**
-- 실제 취급 조건은 금융기관 심사와 약관에 따른다.
+> 실제 취급 조건은 금융기관 심사와 약관에 따라 달라질 수 있습니다.
 {% endif %}
