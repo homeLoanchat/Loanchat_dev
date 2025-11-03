@@ -111,3 +111,58 @@ def test_payment_sensitivity_dataframe_output() -> None:
 def test_payment_sensitivity_requires_rates() -> None:
     with pytest.raises(ValueError):
         calculate_payment_sensitivity(principal=100_000, interest_rates=[], months=120)
+
+
+def test_calculate_ltv_rejects_non_positive_collateral() -> None:
+    with pytest.raises(ValueError):
+        calculate_ltv(collateral_value=0, loan_amount=100_000)
+
+
+# 0 대출금은 허용되며 결과 비율도 0이 되어야 한다.
+def test_calculate_ltv_zero_loan_amount_returns_zero() -> None:
+    ratio = calculate_ltv(collateral_value=500_000, loan_amount=0)
+    assert math.isclose(ratio, 0.0, abs_tol=1e-12)
+
+
+# 음수 대출금 입력은 정책상 허용되지 않는다.
+def test_calculate_ltv_negative_loan_amount_raises() -> None:
+    with pytest.raises(ValueError):
+        calculate_ltv(collateral_value=500_000, loan_amount=-10_000)
+
+
+def test_calculate_dsr_requires_positive_income() -> None:
+    with pytest.raises(ValueError):
+        calculate_dsr(annual_income=0, annual_debt_service=10_000)
+
+
+# 음수 상환액은 입력 검증 단계에서 차단되어야 한다.
+def test_calculate_dsr_rejects_negative_debt_service() -> None:
+    with pytest.raises(ValueError):
+        calculate_dsr(annual_income=80_000, annual_debt_service=-1_000)
+
+
+# 극단적으로 큰 값도 부동소수점 에러 없이 처리되는지 확인한다.
+def test_calculate_dti_handles_large_numbers() -> None:
+    dti = calculate_dti(annual_income=1_000_000_000_000, total_debt_payment=400_000_000_000)
+    assert math.isclose(dti, 0.4, rel_tol=1e-12)
+
+
+def test_calculate_payment_sensitivity_requires_positive_months() -> None:
+    with pytest.raises(ValueError):
+        calculate_payment_sensitivity(principal=100_000, interest_rates=[0.03], months=0)
+
+
+# 음수 금리는 API 계약상 허용되지 않는다.
+def test_amortization_schedule_rejects_negative_interest_rate() -> None:
+    with pytest.raises(ValueError):
+        calculate_amortization_schedule(principal=100_000, interest_rate=-0.01, months=12)
+
+
+# 민감도 분석에서도 금리 배열에 음수 값이 있으면 실패해야 한다.
+def test_payment_sensitivity_rejects_negative_interest_rate() -> None:
+    with pytest.raises(ValueError):
+        calculate_payment_sensitivity(
+            principal=200_000,
+            interest_rates=[0.02, -0.01],
+            months=240,
+        )
