@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import perf_counter
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,6 +17,10 @@ from src.api.routers.chat import router as chat_router
 from src.core.exceptions import register_exception_handlers
 from src.core.logging import configure_logging
 from src.core.metrics import track_latency
+
+
+# 서버 기동 시 .env 를 자동 로드해 OS 환경 변수로 노출한다.
+load_dotenv()
 
 
 @asynccontextmanager

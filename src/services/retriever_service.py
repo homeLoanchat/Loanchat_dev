@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
-from typing import Any, Iterable
+from functools import lru_cache
+from typing import Any, Iterable, Mapping
 
 from src.retrieval.config import ConfidenceConfig
 from src.retrieval.pipeline import RetrievalPipeline
 from src.websearch.config import WebSearchConfig, load_websearch_config
 from src.websearch.search import SearchProvider, search_web
+from src.services.llm_client import ChatCompletionError, UpstageChatClient
 
 logger = logging.getLogger(__name__)
+
+MAX_CONTEXT_DOCUMENTS = 3
+MAX_CONTEXT_WEB_RESULTS = 2
+MAX_CHARS_PER_CONTEXT = 1200
+DEFAULT_CHAT_MODEL = "solar-1-mini-chat"
 
 
 @dataclass(frozen=True)
@@ -54,7 +62,7 @@ class PipelineRetriever:
 
         confidence = self._evaluate_confidence(documents)
         if confidence["passed"]:
-            answer = _compose_answer(documents, web_results)
+            answer = _compose_answer(query, documents, web_results)
             sources = _collect_sources(documents, web_results)
         else:
             logger.info(
@@ -67,7 +75,7 @@ class PipelineRetriever:
             answer = "질문과 직접 일치하는 근거를 찾지 못했습니다. 추가 정보를 제공해 주시면 더 정확히 안내드릴 수 있어요."
             sources = []
 
-        return {
+        payload = {
             "answer": answer,
             "query": query,
             "category": category,
@@ -76,6 +84,7 @@ class PipelineRetriever:
             "web_results": web_results,
             "confidence": confidence,
         }
+        return payload
 
     def _search_web(self, query: str) -> list[dict[str, Any]]:
         if not self._web_provider:
@@ -142,7 +151,7 @@ def _collect_sources(
     sources: list[str] = []
     for item in documents:
         metadata = item.get("metadata") or {}
-        doc_source = metadata.get("doc_source")
+        doc_source = metadata.get("doc_source") or metadata.get("url")
         if isinstance(doc_source, str):
             sources.append(doc_source)
     for item in web_results:
@@ -152,7 +161,93 @@ def _collect_sources(
     return sources
 
 
+@lru_cache(maxsize=1)
+def _get_chat_client() -> UpstageChatClient | None:
+    # ensure .env is loaded for worker processes as well
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(override=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+    api_key = os.getenv("UPSTAGE_API_KEY") or os.getenv("LLM_API_KEY")
+    if not api_key:
+        logger.info("Upstage API key not configured; using template composer instead.")
+        return None
+
+    api_base = os.getenv("UPSTAGE_API_BASE") or os.getenv("LLM_API_BASE") or "https://api.upstage.ai/v1"
+    model = os.getenv("UPSTAGE_CHAT_MODEL") or DEFAULT_CHAT_MODEL
+
+    timeout = _safe_float(os.getenv("UPSTAGE_CHAT_TIMEOUT"), default=30.0)
+    try:
+        client = UpstageChatClient(api_key=api_key, api_base=api_base, model=model, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to initialise Upstage chat client: %s", exc)
+        return None
+    return client
+
+
 def _compose_answer(
+    query: str,
+    documents: Iterable[dict[str, Any]],
+    web_results: Iterable[dict[str, Any]],
+) -> str:
+    llm_client = _get_chat_client()
+    if llm_client:
+        try:
+            return _compose_with_llm(llm_client, query, documents, web_results)
+        except ChatCompletionError as exc:
+            logger.warning("LLM returned unexpected payload: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Falling back to template answer due to LLM failure: %s", exc)
+
+    return _compose_template_answer(documents, web_results)
+
+
+def _compose_with_llm(
+    client: UpstageChatClient,
+    query: str,
+    documents: Iterable[dict[str, Any]],
+    web_results: Iterable[dict[str, Any]],
+) -> str:
+    document_context = _format_documents_for_prompt(documents)
+    web_context = _format_web_results_for_prompt(web_results)
+    context_sections = document_context + web_context
+    context_text = "\n\n".join(context_sections) if context_sections else "자료 없음"
+
+    system_prompt = (
+        "당신은 금융 상담 전문가입니다. "
+        "주어진 자료를 기반으로 한국어로 간결하고 정확한 답변을 제공합니다. "
+        "추측하거나 자료에 없는 내용은 만들지 말고, 필요한 경우 추가 정보를 요청하세요. "
+        "항상 핵심 답변 2~3문장과 근거를 명시하고, 필요한 조건이나 주의사항이 있다면 bullet으로 정리하세요."
+    )
+
+    user_prompt = (
+        f"[사용자 질문]\n{query.strip()}\n\n"
+        "[참고 자료]\n"
+        f"{context_text}\n\n"
+        "위 자료만을 근거로 다음을 수행하세요:\n"
+        "1. 질문에 대한 핵심 답변을 2~3문장으로 작성합니다.\n"
+        "2. 반드시 사용한 근거 자료 번호 또는 제목을 괄호로 표기합니다. 예: (근거: 문서 1)\n"
+        "3. 추가 조건이나 주의사항이 있다면 bullet 리스트로 정리합니다.\n"
+        "4. 자료에 없는 내용은 추측하지 말고, 필요한 경우 추가 정보를 요청합니다.\n"
+    )
+
+    temperature = _safe_float(os.getenv("UPSTAGE_CHAT_TEMPERATURE"), default=0.2)
+    max_tokens = _safe_int(os.getenv("UPSTAGE_CHAT_MAX_TOKENS"), default=768)
+    messages: list[Mapping[str, str]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    return client.complete(
+        messages,
+        temperature=temperature,
+        max_output_tokens=max_tokens,
+    )
+
+
+def _compose_template_answer(
     documents: Iterable[dict[str, Any]],
     web_results: Iterable[dict[str, Any]],
 ) -> str:
@@ -175,6 +270,69 @@ def _compose_answer(
         return f"외부 검색 결과 {count}건을 발견했습니다."
 
     return "관련 자료를 찾지 못했습니다. 질문을 더 구체화해 주세요."
+
+
+def _format_documents_for_prompt(documents: Iterable[dict[str, Any]]) -> list[str]:
+    items: list[str] = []
+    for index, doc in enumerate(documents or [], start=1):
+        if index > MAX_CONTEXT_DOCUMENTS:
+            break
+        metadata = doc.get("metadata") if isinstance(doc, dict) else {}
+        title = None
+        if isinstance(metadata, dict):
+            title = (
+                metadata.get("doc_title")
+                or metadata.get("title")
+                or metadata.get("doc_name")
+            )
+        title = title or f"문서 {index}"
+        text = doc.get("text") if isinstance(doc, dict) else None
+        snippet = _trim_text(text or "")
+        items.append(f"[문서 {index}] {title}\n{snippet}")
+    return items
+
+
+def _format_web_results_for_prompt(results: Iterable[dict[str, Any]]) -> list[str]:
+    items: list[str] = []
+    for index, item in enumerate(results or [], start=1):
+        if index > MAX_CONTEXT_WEB_RESULTS:
+            break
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title") or item.get("name") or f"웹 자료 {index}"
+        snippet = item.get("snippet") or item.get("description") or item.get("summary") or ""
+        url = item.get("url")
+        context = _trim_text(str(snippet))
+        if url:
+            items.append(f"[웹 {index}] {title} ({url})\n{context}")
+        else:
+            items.append(f"[웹 {index}] {title}\n{context}")
+    return items
+
+
+def _trim_text(text: str) -> str:
+    clean = " ".join(text.split())
+    if len(clean) <= MAX_CHARS_PER_CONTEXT:
+        return clean
+    return clean[: MAX_CHARS_PER_CONTEXT - 3] + "..."
+
+
+def _safe_float(value: str | None, *, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _safe_int(value: str | None, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(float(value))
+    except ValueError:
+        return default
 
 
 __all__ = ["PipelineRetriever", "RetrieverResult"]

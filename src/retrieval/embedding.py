@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, Sequence
 
 import requests
@@ -43,19 +43,24 @@ class UpstageEmbedder:
     batch_size: int
     api_base: str | None = None
     timeout: float = 15.0
+    _endpoint: str = field(init=False, repr=False)
+    _session: requests.Session = field(init=False, repr=False)
+    _fallback: HashEmbedder = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.api_key:
             raise ValueError("Upstage Embedder를 사용하려면 api_key가 필요합니다.")
-        self._endpoint = (self.api_base or "https://api.upstage.ai/v1/embeddings").rstrip("/")
-        self._session = requests.Session()
-        self._session.headers.update(
+        endpoint = (self.api_base or "https://api.upstage.ai/v1/embeddings").rstrip("/")
+        session = requests.Session()
+        session.headers.update(
             {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             }
         )
-        self._fallback = HashEmbedder()
+        object.__setattr__(self, "_endpoint", endpoint)
+        object.__setattr__(self, "_session", session)
+        object.__setattr__(self, "_fallback", HashEmbedder())
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
