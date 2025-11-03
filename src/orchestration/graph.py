@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any, Protocol, Literal, Optional
+
+from src.core.metrics import track_latency
 
 from src.core.exceptions import InvalidValueError
 
@@ -51,37 +54,31 @@ def run(
         inputs=params or {},
         category=category,
     )
-    state = route(state, intent=intent)
-
-    if state.mode == "info":
+    if intent == "info":
         _validate_category(category, INFORMATIONAL_CATEGORIES)
-        result = retriever.run(category=category, query=query)
-        state.answer = result.get("answer")
-        state.sources = list(result.get("sources") or [])
-        state.docs = list(result.get("documents") or [])
-        state.web_results = list(result.get("web_results") or [])
-        state.confidence = result.get("confidence")
-        if isinstance(state.confidence, dict):
-            state.reason = state.confidence.get("reason")
-        state.response_data = result
-        state.response_message = state.answer or "관련 정보를 찾았습니다."
-    elif state.mode == "calc":
+    elif intent == "calc":
         _validate_category(category, CALCULATIONAL_CATEGORIES)
-        if not params:
-            raise InvalidValueError(
-                "계산형 intent에는 params가 필요합니다.",
-                field="params",
-            )
-        result = compute.run(category=category, params=params)
-        state.calc = result
-        state.sources = list(result.get("sources") or [])
-        state.confidence = result.get("confidence")
-        state.response_data = result
-        state.response_message = result.get("summary") or "계산 결과를 정리했습니다."
-    else:
+
+    route_started = perf_counter()
+    state = route(
+        state,
+        retriever=retriever,
+        compute=compute,
+        intent_hint=intent,
+    )
+    route_elapsed = (perf_counter() - route_started) * 1000.0
+    track_latency("orchestration_route", value=route_elapsed)
+    state.metrics.setdefault("latency_ms", {})["route_ms"] = round(route_elapsed, 3)
+
+    if state.mode not in {"info", "calc"} and not state.response_message:
         raise InvalidValueError("의도(intent)를 판별하지 못했습니다.", field="intent")
 
+    compose_started = perf_counter()
     state.response_text = render_answer(state)
+    compose_elapsed = (perf_counter() - compose_started) * 1000.0
+    track_latency("composer", value=compose_elapsed)
+    state.metrics.setdefault("latency_ms", {})["composer_ms"] = round(compose_elapsed, 3)
+
     return state
 
 
