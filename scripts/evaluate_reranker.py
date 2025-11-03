@@ -7,11 +7,9 @@ import json
 import sys
 from pathlib import Path
 from statistics import mean
-from typing import Any, Iterable
-
+from typing import Any, Iterable, Sequence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -19,7 +17,7 @@ from src.retrieval.config import load_retrieval_config
 from src.retrieval.pipeline import RetrievalPipeline
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input",
@@ -33,7 +31,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="retrieval 설정 YAML 경로",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def load_candidates(path: Path) -> list[dict[str, Any]]:
@@ -63,9 +61,7 @@ def summarize(scores: Iterable[float]) -> dict[str, float]:
     }
 
 
-def main() -> None:
-    args = parse_args()
-
+def run_evaluate_reranker(args: argparse.Namespace) -> int:
     config = load_retrieval_config(args.config) if args.config else load_retrieval_config()
     pipeline = RetrievalPipeline(config=config)
 
@@ -90,6 +86,13 @@ def main() -> None:
     for key, value in summary_norm.items():
         print(f"{key}: {value:.4f}")
 
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    return run_evaluate_reranker(args)
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

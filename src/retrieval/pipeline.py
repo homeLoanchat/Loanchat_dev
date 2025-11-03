@@ -259,6 +259,9 @@ def _build_candidates(response: dict[str, Any]) -> list[dict[str, Any]]:
     metadatas = _first(response.get("metadatas"))
     distances = _first(response.get("distances"))
 
+    if not ids and documents:
+        ids = [f"doc-{index}" for index, _ in enumerate(documents)]
+
     if not ids:
         return []
 

@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import yaml
 
 from src.websearch.config import WebSearchConfig, load_websearch_config
+from src.websearch.provider import create_requests_provider
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,7 @@ def search_web(
         logger.debug("웹 검색 캐시 적중: %s", cache_path)
         return cached
 
-    if provider is None:
-        raise RuntimeError("검색 provider가 설정되지 않았습니다. search_web 호출 시 provider를 주입하세요.")
+    provider = provider or create_requests_provider(config.provider)
 
     results = provider(query=query, max_results=config.provider.max_results)
     filtered = _filter_whitelist(results, config)
