@@ -1,13 +1,60 @@
-"""FastAPI 및 LangChain 전역 설정을 관리하는 모듈.
-
-TODO:
-1. `pydantic_settings.BaseSettings`를 상속한 설정 클래스를 정의하세요.
-2. API 키/엔드포인트/모델 이름 등 민감 정보는 환경변수 기반으로 불러오세요.
-3. 로컬/스테이징/프로덕션 프로필을 나누고, `load_dotenv` 또는 `.env`를 활용하세요.
-4. `functools.lru_cache`를 이용해 싱글톤 설정 팩토리를 제공하세요.
-"""
+"""FastAPI 및 서비스 전역 설정 모듈."""
 
 from __future__ import annotations
 
-if __name__ == "__main__":
-    raise SystemExit("이 모듈은 직접 실행하지 말고 import 해서 사용하세요.")
+from functools import lru_cache
+from pathlib import Path
+from typing import List
+
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """환경 변수 기반 애플리케이션 설정."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    env: str = Field(default="local", alias="ENV", description="실행 환경 식별자")
+    port: int = Field(default=8000, alias="PORT", description="FastAPI 서비스 포트")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL", description="루트 로그 레벨")
+    allowed_origins: str = Field(
+        default="*",
+        alias="LOANBOT_ALLOWED_ORIGINS",
+        description="CORS 허용 origin (쉼표 구분)",
+    )
+
+    vectorstore_path: Path | None = Field(
+        default=None,
+        alias="VECTORSTORE_PATH",
+        description="벡터스토어 퍼시스턴스 디렉터리",
+    )
+    websearch_api_key: SecretStr | None = Field(
+        default=None,
+        alias="WEBSEARCH_API_KEY",
+        description="외부 웹 검색 API 키",
+    )
+    admin_secret: SecretStr = Field(
+        alias="ADMIN_SECRET",
+        description="관리자 API 접근 토큰",
+    )
+    metrics_window: int = Field(
+        default=1000,
+        alias="METRICS_WINDOW",
+        description="레이턴시 히스토리 최대 길이",
+    )
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        values: list[str] = [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+        return values or ["*"]
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """싱글톤 설정 인스턴스를 반환한다."""
+
+    return Settings()
+
+
+__all__ = ["Settings", "get_settings"]
