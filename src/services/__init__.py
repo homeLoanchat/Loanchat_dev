@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from .chat_service import ChatService, get_chat_service, get_compute, get_retriever
-from .compute_service import LoanComputationService
+from .chat_service import ChatService, get_chat_service
+from .compute_service import ComputeService, get_compute_service
 
 __all__ = [
     "ChatService",
-    "LoanComputationService",
+    "ComputeService",
     "get_chat_service",
-    "get_compute",
-    "get_retriever",
+    "get_compute_service",
 ]

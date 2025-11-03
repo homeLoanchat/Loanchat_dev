@@ -1,193 +1,178 @@
-# LoanBot RAG 에이전트
+# LoanBot FastAPI 백엔드
 
-지식베이스(RAG)와 화이트리스트 웹 검색을 결합해 금융 상품 질문에 신뢰 가능한 답변을 제공하는 LoanBot 백엔드입니다.  
-FastAPI 기반 REST API, LangGraph 오케스트레이션, Pandas 계산 엔진, ChromaDB 벡터스토어를 하나의 파이프라인으로 묶었습니다.
+금융 상담용 RAG 에이전트를 위한 FastAPI 기반 백엔드입니다.  
+챗봇(`/api/chat`), 계산(`/api/calc`), 관리(`/api/admin`) API와 문서/임베딩 빌드 스크립트를 제공합니다.
 
 ---
 
 ## 빠른 시작
-
-### 1. 사전 준비
-
-- Python 3.11 이상 (권장: 3.11.x)  
-- (선택) 가상환경
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
 pip install --upgrade pip
 pip install -r requirements.txt
-```
-
-- PDF 추출이 필요하면 `pip install pypdf` (또는 `PyPDF2`)를 추가 설치하세요.
-
-### 2. 환경 변수
-
-프로젝트 루트에 `.env`를 만들어 아래 항목을 채워주세요.  
-`config/.env.example` 파일에 기본 템플릿이 포함되어 있습니다.
-
-| 변수 | 기본값 | 설명 |
-| --- | --- | --- |
-| `APP_ENV` | `local` | 실행 환경 플래그 |
-| `APP_HOST` | `0.0.0.0` | FastAPI 바인딩 호스트 |
-| `APP_PORT` | `8000` | FastAPI 포트 |
-| `LOANBOT_ALLOWED_ORIGINS` | `*` | CORS 허용 오리진 목록 |
-| `ADMIN_ACCESS_TOKEN` | 없음 | Admin API 보호용 토큰 (`X-ADMIN-TOKEN`) |
-| `LLM_API_BASE` | `https://api.openai.com/v1` | OpenAI 호환 API 엔드포인트 |
-| `LLM_API_KEY` | 없음 | LLM/임베딩 호출용 키 |
-| `VECTOR_DB_PATH` | `./data/embeddings/chroma` | ChromaDB 저장 위치 |
-| `VECTOR_DB_COLLECTION` | `loanbot_docs` | ChromaDB 컬렉션 이름 |
-| `SEARCH_API_KEY` | 없음 | 외부 검색/크롤링 키 |
-| `UPSTAGE_API_KEY` | 없음 | 리랭커/재순위 API 키 |
-| `DATA_GO_KR_KEY` | 없음 | 공공데이터 포털 서비스 키 |
-| `LOG_LEVEL` | `INFO` | 애플리케이션 로그 레벨 |
-| `LANGSMITH_API_KEY` | 없음 | LangSmith 추적용 키 |
-
-필요한 외부 서비스 키를 사용 환경에 맞게 추가하거나 비워두면 됩니다.
-
-### 3. 서버 실행
-
-```bash
+cp .env.example .env  # 필요한 값 채우기
 uvicorn src.api.main:app --reload
 ```
 
 - Swagger UI: <http://localhost:8000/docs>
-- 헬스 체크: `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/admin/health`
+- 헬스 체크: `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/admin/health -H 'X-Admin-Token: <토큰>'`
 
-Docker 환경을 사용하려면:
+### 필수 환경 변수 (`.env`)
 
-```bash
-docker compose up --build
-```
+| 변수 | 예시 | 설명 |
+| --- | --- | --- |
+| `ENV` | `local` | 실행 환경 식별자 |
+| `PORT` | `8000` | uvicorn 포트 |
+| `LOG_LEVEL` | `INFO` | 루트 로그 레벨 |
+| `LOANBOT_ALLOWED_ORIGINS` | `http://localhost:5173` | CORS 허용 origin(쉼표 구분) |
+| `ADMIN_SECRET` | `super-secret-token` | 관리자 API 토큰 (`X-Admin-Token`) |
+| `VECTORSTORE_PATH` | `./data/vectorstore` | 벡터스토어 디렉터리 |
+| `WEBSEARCH_API_KEY` | _옵션_ | 외부 웹 검색 키 |
+| `METRICS_WINDOW` | `1000` | 메트릭 히스토리 최대 길이 |
+
+`.env.example`에 기본 템플릿이 포함되어 있습니다.
 
 ---
 
-## API 개요
+## API 요약
 
-### `/api/chat` – 통합 챗봇 (Mock 기반)
-
-| 항목 | 내용 |
-| --- | --- |
-| 메서드 | `POST` |
-| 요청 | `{ "message": "...", "intent": "informational" | "calculational", "category": "...", "params": {...} }` |
-| 응답 | `{ "success": true, "type": "informational", "data": {...}, "metadata": {...} }` |
-
-샘플 호출:
-
-```bash
-curl -X POST http://localhost:8000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"전세자금대출 한도가 궁금해요","intent":"informational","category":"loan_limit"}'
-```
-
-Retrieval 경로는 `PipelineRetriever`가 담당하며, ChromaDB에서 관련 문서를 검색한 후 Upstage 리랭커로 상위 결과를 정렬하고, 필요 시 화이트리스트 웹 검색 결과를 보강합니다. 계산 의도는 `ChatService` 내부의 ComputeRunner를 통해 Pandas 기반 순수 함수를 호출합니다.
-
-### `/api/calc` – 계산 전용 (계약만 정의)
-
-금융 계산을 위한 전용 엔드포인트입니다. 프런트엔드나 오케스트레이션에서 계산 엔진을 직접 호출할 수 있습니다.  
-계약 세부 사항은 `docs/calc_api_contract.md`에서 유지 관리합니다.
-
-**요청 (`POST /api/calc`)**
+### `/api/chat` – 통합 챗봇 (POST)
 
 ```json
 {
-  "calc_type": "amortization_schedule",
-  "params": {
-    "principal": 30000000,
-    "interest_rate": 0.055,
-    "months": 36
-  }
+  "message": "전세자금대출 한도가 궁금해요",
+  "intent": "informational",
+  "category": "loan_limit"
 }
 ```
 
-**응답**
+응답은 공통 포맷으로 반환됩니다.
 
 ```json
 {
   "success": true,
-  "type": "amortization_schedule",
+  "type": "informational",
+  "category": "loan_limit",
   "data": {
-    "rows": [
-      { "period": 1, "payment": 905877.05, "principal": 768377.05, "interest": 137500.0, "balance": 29231622.95 }
-    ],
-    "summary": {
-      "monthly_payment": 905877.05,
-      "total_payment": 32611573.95,
-      "total_interest": 2611573.95
-    }
+    "answer": "대출 한도는 소득과 신용등급에 따라 달라집니다.",
+    "sources": ["https://example.com/loan-guidelines"]
   },
   "metadata": {
-    "mock": false,
-    "generated_at": "2025-10-30T06:53:10.123456Z",
-    "trace_id": "f2e5f9ab-e268-474c-8a65-3a621ecf3a4d"
+    "mock": true,
+    "generated_at": "2025-10-30T06:52:46.910280Z",
+    "trace_id": "ad7d1c28-6a2c-4a7b-86b7-5d7e65a9f6c3"
   }
 }
 ```
 
-헬스체크는 다음 명령으로 확인할 수 있습니다.
+### `/api/calc` – 계산 전용 (POST)
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/admin/health
+curl -X POST http://localhost:8000/api/calc \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "calc_type": "ltv",
+        "params": {"collateral_value": 500000000, "loan_amount": 300000000}
+      }'
 ```
+
+성공 시:
+
+```json
+{
+  "success": true,
+  "type": "ltv",
+  "data": {
+    "ltv": 0.6,
+    "ratio": "0.6000",
+    "collateral_value": 500000000.0,
+    "loan_amount": 300000000.0
+  }
+}
+```
+
+
+오류 규칙:
+
+| 상황 | HTTP | 코드 | 비고 |
+| --- | --- | --- | --- |
+| 잘못된 `calc_type` | 400 | `INVALID_VALUE` | `details.calc_type` 포함 |
+| 필수 파라미터 누락 | 400 | `INVALID_VALUE` | `field` 값으로 파라미터명 제공 |
+| 스키마 오류 (타입 불일치 등) | 422 | `INVALID_VALUE` | FastAPI 기본 ValidationError |
+
+지원하는 `calc_type` 값: `ltv`, `dti`, `dsr`, `amortization`, `payment_sensitivity`
 
 ### 서비스 구성
 
-`ChatService`는 FastAPI 라우터에 의존성으로 주입되어 intent에 따라 Retrieval/Compute 경로를 실행합니다.  
-Retrieval은 `PipelineRetriever`가 CRAG 임계치(최소 점수/결과 수)를 적용해 신뢰도 정보를 산출하며, Compute는 `LoanComputationService`가 정책 테이블과 계산 엔진을 결합해 한도/상환/비율 정보를 생성합니다.
 
-FastAPI 라우터는 다음과 같이 의존성을 주입받습니다.
+모든 엔드포인트는 `X-Admin-Token` 헤더로 보호됩니다.
+
+| 엔드포인트 | 설명 |
+| --- | --- |
+| `GET /api/admin/health` | 헬스 체크 (200) |
+| `POST /api/admin/reindex` | 벡터 인덱스 재생성 (202 Accepted) |
+| `GET /api/admin/metrics` | 업타임/요청 수/레이턴시/토큰 사용량/마지막 재색인 시각 |
+
+예시:
+
+```bash
+curl -X GET http://localhost:8000/api/admin/metrics \
+  -H 'X-Admin-Token: super-secret-token'
+```
+
 
 ```python
 from fastapi import Depends
 
-from src.services import ChatService, get_chat_service
 
+## 서비스 구조
 
-@router.post("", response_model=ChatResponse)
-def chat_endpoint(
-    payload: ChatRequest,
-    service: ChatService = Depends(get_chat_service),
-) -> ChatResponse:
-    return service.handle(payload)
+```
+src/
+├─ api/            # FastAPI 라우터 & 스키마
+├─ core/           # 공통 응답, 예외, DI, 메트릭, 로깅
+├─ services/       # ChatService, ComputeService, Retriever 래퍼
+├─ compute/        # 금융 계산 엔진 및 정책 룰
+├─ retrieval/      # 문서 로딩/청킹/임베딩 파이프라인
+├─ orchestration/  # LangGraph 상태/라우터/컴포저 뼈대
+├─ store/          # DAO 인터페이스(미구현 템플릿)
+└─ websearch/      # 화이트리스트 웹 검색 템플릿
+
 ```
 
 Retrieval의 신뢰도 평가는 응답 `metadata.confidence`에 기록되고, 계산형 응답은 `LoanComputationService`에서 산출한 월 상환액/비율 정보가 포함됩니다.
 추가로 `/api/chat/preview` 엔드포인트는 `mode`(`info`/`calc`)에 따라 공통 구조의 미리보기 응답을 제공해, 검색 근거와 계산 결과를 사전에 확인할 수 있습니다.
 
-## 환경 변수
 
-| 변수 | 기본값 | 설명 |
-| --- | --- | --- |
-| `python scripts/build_index.py` | raw → processed → embeddings 업서트 | — |
-| `python scripts/refresh_kb.py` | 변경 문서 증분 업데이트 | — |
-| `python scripts/cli.py` | Typer CLI (build/refresh/evaluate 래퍼) | 각 커맨드는 현재 `NotImplementedError` 상태 |
-| `python scripts/evaluate_reranker.py` | 리랭커 품질 평가 | — |
-
-RetrievalPipeline은 `config/retrieval.yaml` 설정을 읽어 로더/청킹/임베딩/벡터스토어 업서트를 자동화합니다.  
-임베딩은 OpenAI/Text-Embedding-3 Large(기본)이며, Upstage reranker로 상위 K개 결과만 반환합니다.
+| 명령 | 설명 |
+| --- | --- |
+| `python scripts/build_index.py` | raw → processed → 벡터스토어 업서트 |
+| `python scripts/cli.py build-index` | Typer CLI 래퍼 (exit code 0/1) |
+| `python scripts/refresh_kb.py` | (미구현) 증분 KB 리프레시 |
+| `python scripts/evaluate.py` | (미구현) 오프라인 평가 |
 
 ---
 
 ## 테스트
 
 ```bash
-# 전체 테스트
-pytest
 
-# /api/chat e2e만
-pytest tests/e2e/test_chat_api.py
-pytest tests/unit/test_composer.py
+# 계산/챗봇 E2E
+pytest tests/e2e/test_chat_api.py tests/e2e/test_calc_api.py
+
+# 계산 엔진 단위 테스트
+PYTHONPATH=$(pwd) pytest tests/unit
 ```
 
-## DI 교체 방법
+`tests/conftest.py`에서 ADMIN_SECRET 등 테스트용 환경 변수를 자동으로 설정합니다.
 
-`src/services`에서 제공하는 `get_retriever()`/`get_compute()`를 FastAPI dependency override로 교체하면 됩니다.
+---
 
-```python
-from src.services import get_compute, get_retriever
+## 주의 사항
 
-app.dependency_overrides[get_retriever] = lambda: MyRetriever()
-app.dependency_overrides[get_compute] = lambda: MyCompute()
-```
+- `/api/chat` 계산 흐름은 Mock 구현이며, `/api/calc`를 통해 실제 ComputeService를 연결할 수 있습니다.
+- `/api/admin/reindex`는 백그라운드 태스크로 수행되며, 완료 여부는 로그 또는 `last_reindex_at`으로 확인하세요.
+- Admin 토큰과 외부 API 키는 반드시 환경 변수로만 주입하고 코드에 하드코딩하지 마세요.
 
-라우터 구현은 그대로 유지됩니다.

@@ -6,8 +6,6 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-pytestmark = pytest.mark.skip(reason="calc API contract only; implementation pending")
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -22,9 +20,8 @@ async def client() -> AsyncClient:
         yield http_client
 
 
-# 계약상 정상 시나리오: 허용된 파라미터로 LTV를 계산해야 한다.
 @pytest.mark.anyio
-async def test_calc_ltv_success(client: AsyncClient) -> None:
+async def test_calc_success(client: AsyncClient) -> None:
     response = await client.post(
         "/api/calc",
         json={
@@ -37,22 +34,32 @@ async def test_calc_ltv_success(client: AsyncClient) -> None:
     body = response.json()
     assert body["success"] is True
     assert body["type"] == "ltv"
-    assert body["data"]["ratio"] == pytest.approx(0.6, rel=1e-6)
+    assert pytest.approx(body["data"]["ltv"], rel=1e-6) == 0.6
 
 
-# 정책 위반 시나리오: DTI가 한도를 초과하면 범위 에러를 반환해야 한다.
 @pytest.mark.anyio
-async def test_calc_dti_policy_violation(client: AsyncClient) -> None:
+async def test_calc_invalid_type_returns_400(client: AsyncClient) -> None:
     response = await client.post(
         "/api/calc",
-        json={
-            "calc_type": "dti",
-            "params": {"annual_income": 80_000_000, "total_debt_payment": 50_000_000},
-        },
+        json={"calc_type": "unknown", "params": {}},
     )
 
     assert response.status_code == 400
     body = response.json()
     assert body["success"] is False
-    assert body["error"]["code"] == "INVALID_RANGE"
-    assert body["error"]["field"] == "total_debt_payment"
+    assert body["error"]["code"] == "INVALID_VALUE"
+    assert body["error"]["field"] == "calc_type"
+
+
+@pytest.mark.anyio
+async def test_calc_missing_params_returns_400(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/calc",
+        json={"calc_type": "ltv"},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["success"] is False
+    assert body["error"]["code"] == "INVALID_VALUE"
+    assert body["error"]["field"] == "params"

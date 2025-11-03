@@ -3,13 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from contextlib import contextmanager
+from typing import Any
+
+from config.settings import Settings, get_settings as _load_settings
 
 
-def get_settings():
-    """TODO: `config.settings`에서 설정 객체를 불러오는 의존성을 구현하세요."""
-    raise NotImplementedError("설정 의존성을 구현하세요.")
+def get_settings() -> Settings:
+    """설정 객체를 FastAPI dependency로 노출한다."""
+
+    return _load_settings()
 
 
-def get_vectorstore() -> Generator[object, None, None]:
-    """TODO: 벡터스토어 세션을 생성/정리하는 FastAPI dependency를 구현하세요."""
-    raise NotImplementedError("벡터스토어 의존성을 구현하세요.")
+@contextmanager
+def _vectorstore_context() -> Generator[Any | None, None, None]:
+    """벡터스토어 세션 컨텍스트의 자리표시자."""
+
+    yield None
+
+
+def get_vectorstore() -> Generator[Any | None, None, None]:
+    """FastAPI dependency로 사용할 벡터스토어 세션."""
+
+    with _vectorstore_context() as resource:
+        yield resource
+
+
+__all__ = ["get_settings", "get_vectorstore"]
