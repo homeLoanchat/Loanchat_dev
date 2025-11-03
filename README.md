@@ -124,68 +124,39 @@ Retrieval 경로는 `PipelineRetriever`가 담당하며, ChromaDB에서 관련 �
 }
 ```
 
-| calc_type | 필수 파라미터 | 선택 파라미터 | 설명 |
-|-----------|---------------|----------------|------|
-| `ltv` | `collateral_value`, `loan_amount` | — | 담보 대비 대출 비율 계산 |
-| `dti` | `annual_income`, `total_debt_payment` | — | 총부채상환비율(연간) |
-| `dsr` | `annual_income`, `annual_debt_service` | — | 총부채원리금상환비율 |
-| `amortization_schedule` | `principal`, `interest_rate`, `months` | `as_dataframe` | 원리금 균등 상환 스케줄 |
-| `monthly_payment` | `principal`, `interest_rate`, `months` | — | 월 상환액/총이자 요약(스케줄 활용) |
-| `payment_sensitivity` | `principal`, `interest_rates[]`, `months` | `as_dataframe` | 금리 변화에 따른 민감도 분석 |
+헬스체크는 다음 명령으로 확인할 수 있습니다.
 
-**에러 규칙**
-
-| 코드 | HTTP | 설명 |
-| --- | --- | --- |
-| `INVALID_VALUE` | 400/422 | 파라미터 누락·형식 오류, 음수 입력 등 기본 검증 실패 |
-| `INVALID_RANGE` | 400 | 정책 한도를 초과/미달하는 케이스 (예: 정책상 허용되지 않는 DTI) |
-| `TIMEOUT` | 504 | 계산 엔진 응답 지연 |
-
-모든 금액·금리·기간 파라미터는 0 초과 값이어야 하며, 정책 룰(`src/compute/policy.py`)을 위반하면 `INVALID_RANGE`와 함께 정책 한도 정보를 `error.details`에 담아 반환합니다. 성공/실패 시나리오별 샘플 요청은 `docs/calc_api_contract.md`의 테스트 섹션을 참고하세요.
-
-### `/api/admin`
-
-| Endpoint | 설명 |
-| --- | --- |
-| `GET /api/admin/health` | 서버 헬스 체크 및 버전 정보 반환 |
-| `POST /api/admin/reindex` | 문서 인덱스 전체 재빌드 (비동기) |
-| `POST /api/admin/refresh` | 변경된 문서만 증분 업데이트 |
-| `GET /api/admin/metrics` | SLA/토큰/레이턴시 등 관측치 조회 |
-| `GET /api/admin/status` | RAG 파이프라인, 웹 검색, 계산 엔진 상태 확인 |
-
-모든 Admin API는 `X-ADMIN-TOKEN` 헤더를 검사해 보호합니다.
-
----
-
-## 프로젝트 구조
-
-```
-loanbot/
-├─ config/              # 설정 & 프롬프트
-├─ data/                # raw / processed / embeddings / web_cache
-├─ docs/                # 요구사항, 아키텍처, 평가 계획
-├─ scripts/             # Typer CLI, 인덱스 빌더, KB 리프레시, 평가
-├─ src/
-│  ├─ api/              # FastAPI 라우터 & 스키마
-│  ├─ core/             # 로깅, 예외, 응답, DI, 메트릭
-│  ├─ services/         # ChatService, Retriever/Compute 래퍼
-│  ├─ retrieval/        # 문서 로더, 파이프라인, 벡터스토어, 리랭커
-│  ├─ websearch/        # 검색 Provider & 캐시
-│  ├─ compute/          # LTV/DTI/DSR/상환표/민감도 계산 엔진
-│  ├─ orchestration/    # LangGraph 그래프, 라우터, 컴포저
-│  ├─ store/            # DAO/세션 인터페이스 (메모리/JSONL/Redis)
-│  └─ nlp/              # 의도/슬롯 추출
-└─ tests/
-   ├─ unit/             # 계산 엔진, 정책
-   ├─ e2e/              # /api/chat 스모크
-   └─ contract/         # DAO 공통 테스트 (계획)
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/api/admin/health
 ```
 
----
+### 서비스 구성
 
-## 스크립트 & 파이프라인
+`ChatService`는 FastAPI 라우터에 의존성으로 주입되어 intent에 따라 Retrieval/Compute 경로를 실행합니다.  
+Retrieval은 `PipelineRetriever`가 CRAG 임계치(최소 점수/결과 수)를 적용해 신뢰도 정보를 산출하며, Compute는 `LoanComputationService`가 정책 테이블과 계산 엔진을 결합해 한도/상환/비율 정보를 생성합니다.
 
-| 명령 | 설명 | 비고 |
+FastAPI 라우터는 다음과 같이 의존성을 주입받습니다.
+
+```python
+from fastapi import Depends
+
+from src.services import ChatService, get_chat_service
+
+
+@router.post("", response_model=ChatResponse)
+def chat_endpoint(
+    payload: ChatRequest,
+    service: ChatService = Depends(get_chat_service),
+) -> ChatResponse:
+    return service.handle(payload)
+```
+
+Retrieval의 신뢰도 평가는 응답 `metadata.confidence`에 기록되고, 계산형 응답은 `LoanComputationService`에서 산출한 월 상환액/비율 정보가 포함됩니다.
+추가로 `/api/chat/preview` 엔드포인트는 `mode`(`info`/`calc`)에 따라 공통 구조의 미리보기 응답을 제공해, 검색 근거와 계산 결과를 사전에 확인할 수 있습니다.
+
+## 환경 변수
+
+| 변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `python scripts/build_index.py` | raw → processed → embeddings 업서트 | — |
 | `python scripts/refresh_kb.py` | 변경 문서 증분 업데이트 | — |
@@ -205,50 +176,18 @@ pytest
 
 # /api/chat e2e만
 pytest tests/e2e/test_chat_api.py
-
-# 계산 엔진만
-pytest tests/unit/test_compute_engine.py
+pytest tests/unit/test_composer.py
 ```
 
-`tests/unit/test_compute_engine.py`는 LTV, DTI, DSR, 상환 스케줄, 민감도 계산의 정상/경계값/에러 케이스를 확인합니다.
+## DI 교체 방법
 
----
+`src/services`에서 제공하는 `get_retriever()`/`get_compute()`를 FastAPI dependency override로 교체하면 됩니다.
 
-## 아키텍처 요약
+```python
+from src.services import get_compute, get_retriever
 
-1. **문서 인덱싱**  
-   - `scripts/build_index.py` 실행 → `data/raw`에서 PDF/JSON/TXT 로드 → 텍스트 정제 → 청킹 → OpenAI 임베딩 생성 → ChromaDB 업서트 → `data/processed`에 결과 기록.
-   - 변경 사항은 `scripts/refresh_kb.py`가 감지해 부분 업데이트.
+app.dependency_overrides[get_retriever] = lambda: MyRetriever()
+app.dependency_overrides[get_compute] = lambda: MyCompute()
+```
 
-2. **웹 검색 & 리랭킹**  
-   - 허용 도메인(`config/websearch.yaml`)만 검색하고, 결과를 `.json` 캐시.  
-   - Upstage reranker가 문서/웹 검색 결과를 통합 정렬.
-
-3. **오케스트레이션**  
-   - LangGraph `router`가 intent/slot/신뢰도에 따라 계산/지식/웹 모드 분기.  
-   - 스테이트 머신(`state.py`)에 문서, 계산 결과, 사용자 메시지, 출처 정보를 누적.  
-   - `composer.py`가 템플릿과 요약 규칙으로 최종 응답을 생성.
-
-4. **계산 엔진**  
-   - 순수 Pandas 함수로 LTV/DTI/DSR/상환표/민감도를 계산.  
-   - `policy.py`에서 지역/상품별 임계치를 로드해 규제 준수 여부 안내.
-
-5. **관측성**  
-   - `src/core/metrics.py`가 토큰, 레이턴시, 성공률을 LangSmith와 Prometheus로 전송.  
-   - Admin API에서 요약 메트릭과 인덱싱 상태를 확인.
-
----
-
-## 참고 자료
-
-- [프로젝트 RFP 노션 링크](https://www.notion.so/Toy-Project-4-26c9047c353d8064b6abe1419d3d6d1a)
-- `docs/requirements.md`: 요구사항 정리 (갱신 예정)
-- `docs/architecture_crag.md`: LangGraph 흐름과 설계 메모
-- `docs/eval_plan.md`: 시나리오/지표/샘플셋 계획
-
----
-
-## 문의
-
-실행/설정/테스트 관련 질문은 팀 채널 또는 GitHub Issues로 남겨 주세요.  
-공동 작업 시 브랜치 전략과 PR 템플릿을 준수해 주세요. 좋은 기여를 기다리고 있습니다! 🛠️
+라우터 구현은 그대로 유지됩니다.
