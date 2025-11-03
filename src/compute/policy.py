@@ -50,6 +50,7 @@ _POLICY_TABLE: Final[PolicyTable] = {
         },
     },
 }
+# TODO(policy): 향후 요구사항에 따라 `apac`, `us` 등 지역과 상품 세부 유형을 여기에 추가하세요.
 
 
 def get_policy(region: str, product_type: str) -> Policy:
