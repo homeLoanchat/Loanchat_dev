@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 
+=======
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)
 """Compute 서비스 계층."""
 
 from __future__ import annotations
@@ -185,4 +188,8 @@ def get_compute_service() -> ComputeService:
     return ComputeService()
 
 
+<<<<<<< HEAD
 __all__ = ["ComputeService", "get_compute_service"]
+=======
+__all__ = ["ComputeService", "get_compute_service"]
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)

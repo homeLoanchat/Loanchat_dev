@@ -92,8 +92,22 @@ curl -X POST http://localhost:8000/api/calc \
   }
 }
 ```
+<<<<<<< HEAD
+=======
+
+오류 규칙:
+
+| 상황 | HTTP | 코드 | 비고 |
+| --- | --- | --- | --- |
+| 잘못된 `calc_type` | 400 | `INVALID_VALUE` | `details.calc_type` 포함 |
+| 필수 파라미터 누락 | 400 | `INVALID_VALUE` | `field` 값으로 파라미터명 제공 |
+| 스키마 오류 (타입 불일치 등) | 422 | `INVALID_VALUE` | FastAPI 기본 ValidationError |
+
+지원하는 `calc_type` 값: `ltv`, `dti`, `dsr`, `amortization`, `payment_sensitivity`
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)
 
 
+<<<<<<< HEAD
 오류 규칙:
 
 | 상황 | HTTP | 코드 | 비고 |
@@ -107,6 +121,8 @@ curl -X POST http://localhost:8000/api/calc \
 ### 서비스 구성
 
 
+=======
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)
 모든 엔드포인트는 `X-Admin-Token` 헤더로 보호됩니다.
 
 | 엔드포인트 | 설명 |
@@ -123,6 +139,7 @@ curl -X GET http://localhost:8000/api/admin/metrics \
 ```
 
 
+<<<<<<< HEAD
 ```python
 from fastapi import Depends
 
@@ -145,6 +162,25 @@ src/
 Retrieval의 신뢰도 평가는 응답 `metadata.confidence`에 기록되고, 계산형 응답은 `LoanComputationService`에서 산출한 월 상환액/비율 정보가 포함됩니다.
 추가로 `/api/chat/preview` 엔드포인트는 `mode`(`info`/`calc`)에 따라 공통 구조의 미리보기 응답을 제공해, 검색 근거와 계산 결과를 사전에 확인할 수 있습니다.
 
+=======
+## 서비스 구조
+
+```
+src/
+├─ api/            # FastAPI 라우터 & 스키마
+├─ core/           # 공통 응답, 예외, DI, 메트릭, 로깅
+├─ services/       # ChatService, ComputeService, Retriever 래퍼
+├─ compute/        # 금융 계산 엔진 및 정책 룰
+├─ retrieval/      # 문서 로딩/청킹/임베딩 파이프라인
+├─ orchestration/  # LangGraph 상태/라우터/컴포저 뼈대
+├─ store/          # DAO 인터페이스(미구현 템플릿)
+└─ websearch/      # 화이트리스트 웹 검색 템플릿
+```
+
+---
+
+## 스크립트 & CLI
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)
 
 | 명령 | 설명 |
 | --- | --- |
@@ -158,10 +194,16 @@ Retrieval의 신뢰도 평가는 응답 `metadata.confidence`에 기록되고, �
 ## 테스트
 
 ```bash
+<<<<<<< HEAD
 
 # 계산/챗봇 E2E
 pytest tests/e2e/test_chat_api.py tests/e2e/test_calc_api.py
 
+=======
+# 계산/챗봇 E2E
+pytest tests/e2e/test_chat_api.py tests/e2e/test_calc_api.py
+
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)
 # 계산 엔진 단위 테스트
 PYTHONPATH=$(pwd) pytest tests/unit
 ```
@@ -175,4 +217,7 @@ PYTHONPATH=$(pwd) pytest tests/unit
 - `/api/chat` 계산 흐름은 Mock 구현이며, `/api/calc`를 통해 실제 ComputeService를 연결할 수 있습니다.
 - `/api/admin/reindex`는 백그라운드 태스크로 수행되며, 완료 여부는 로그 또는 `last_reindex_at`으로 확인하세요.
 - Admin 토큰과 외부 API 키는 반드시 환경 변수로만 주입하고 코드에 하드코딩하지 마세요.
+<<<<<<< HEAD
 
+=======
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)

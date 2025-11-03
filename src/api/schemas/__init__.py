@@ -19,10 +19,15 @@ from .chat import (
 )
 
 __all__ = [
+<<<<<<< HEAD
 
     "CalcType",
     "CalcRequest",
 
+=======
+    "CalcType",
+    "CalcRequest",
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)
     "ChatIntent",
     "ChatMetadata",
     "ChatMessage",
@@ -31,9 +36,13 @@ __all__ = [
     "MetricsData",
     "MetricsResponse",
     "HealthResponse",
+<<<<<<< HEAD
 
     "build_calc_response",
 
+=======
+    "build_calc_response",
+>>>>>>> 5bd142c (add calc API, admin metrics, and settings DI)
     "build_chat_response",
     "build_mock_response",
 ]
