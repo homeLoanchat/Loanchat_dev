@@ -5,16 +5,15 @@
 
 {% if mode == "calc" %}
 **계산 결과 요약**
-- {{ calc.summary or summary }}
+- {{ calc.summary or summary | truncate(280, True, '...') }}
 {% if calc.limit %}
-- 예상 대출 한도: **{{ calc.limit | default("-") }}**
+- 예상 대출 한도: **{{ calc.limit | round(2) | default("-") }}**
 {% endif %}
 {% if calc.monthly_payment %}
-- 예상 월 상환액: **{{ calc.monthly_payment | default("-") }}**
+- 예상 월 상환액: **{{ calc.monthly_payment | round(2) | default("-") }}**
 {% endif %}
 {% if calc.term_years %}
-- 상환 기간: {{ calc.term_years }}년 ({{ calc.term_months }}개월)
-{% endif %}
+- 상환 기간: {{ calc.term_years }}년 ({{ calc.term_months }}개월){% endif %}
 
 **정책 및 가정**
 {% if calc.policy %}
@@ -22,9 +21,13 @@
 {% for key, value in calc.policy.items() %}
   - {{ key }}: {{ value }}
 {% endfor %}
+{% else %}
+- 정책 정보: (추가 확인 필요)
 {% endif %}
 {% if calc.assumptions %}
 - 가정: {{ calc.assumptions | join(", ") }}
+{% else %}
+- 가정: 없음
 {% endif %}
 
 **출처**
@@ -32,36 +35,42 @@
 {% else %}- 계산 엔진 산출 결과 기준
 {% endfor %}
 
-> 본 결과는 참고용이며 실제 한도와 금리는 금융기관 심사 결과에 따라 달라질 수 있습니다.
+> 본 결과는 참고용이며 실제 한도와 금리는 금융기관 심사 결과에 따라 달라질 수 있습니다. 최신 심사 기준은 취급 금융기관에 확인하세요.
 
 {% else %}
 **요약**
-{{ summary }}
+{{ summary | truncate(350, True, '...') }}
 
 {% if info.documents %}
 **내부 문서**
-{% for item in info.documents %}
-- {% if item.url %}[{{ item.title }}]({{ item.url }}){% else %}{{ item.title }}{% endif %}{% if item.snippet %}: {{ item.snippet }}{% endif %}
+{% for item in info.documents[:5] %}
+- {% if item.url %}[{{ item.title }}]({{ item.url }}){% else %}{{ item.title }}{% endif %}{% if item.snippet %}: {{ item.snippet | truncate(160, True, '...') }}{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if info.web %}
 **웹 검색 보강**
-{% for item in info.web %}
-- {% if item.url %}[{{ item.title }}]({{ item.url }}){% else %}{{ item.title }}{% endif %}{% if item.snippet %}: {{ item.snippet }}{% endif %}
+{% for item in info.web[:3] %}
+- {% if item.url %}[{{ item.title }}]({{ item.url }}){% else %}{{ item.title }}{% endif %}{% if item.snippet %}: {{ item.snippet | truncate(140, True, '...') }}{% endif %}
 {% endfor %}
 {% endif %}
 
 {% if confidence %}
 **신뢰도**
 - 점수: {{ confidence.score | default("-") }}
-{% if confidence.reason %}- 사유: {{ confidence.reason }}{% endif %}
+{% if confidence.reason %}- 사유: {{ confidence.reason | truncate(120, True, '...') }}{% endif %}
+{% else %}
+**신뢰도**
+- 점수: -
+- 사유: (표시할 데이터 없음)
 {% endif %}
 
 **출처 목록**
-{% for src in info.sources %}- {{ src }}
-{% else %}- 일치하는 내부 문서가 부족하여 요약 정보만 제공합니다.
+{% for src in info.sources %}
+- {{ src }}
+{% else %}
+- 일치하는 내부 문서가 부족하여 요약 정보만 제공합니다.
 {% endfor %}
 
-> 실제 취급 조건은 금융기관 심사와 약관에 따라 달라질 수 있습니다.
+> 실제 취급 조건은 금융기관 심사와 약관에 따라 달라질 수 있습니다. 최신 공시일이 12개월 이상 지났다면 업데이트가 필요합니다.
 {% endif %}
