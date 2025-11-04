@@ -23,7 +23,10 @@ class ChatRequest(BaseModel):
     """챗봇 통합 엔드포인트 요청 스키마."""
 
     message: str = Field(..., description="사용자 입력 질문")
-    intent: ChatIntent = Field(..., description="정보형/계산형 중 하나")
+    intent: ChatIntent | None = Field(
+        default=None,
+        description="정보형/계산형 중 하나 (미지정 시 서버가 자동 판별)",
+    )
     category: str | None = Field(
         default=None,
         description="업무/도메인 분류 (예: 'loan_limit', 'interest_rate')",
@@ -38,14 +41,9 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
-                {
-                    "message": "대출 한도가 궁금해",
-                    "intent": "informational",
-                    "category": "loan_limit",
-                },
+                {"message": "대출 한도가 궁금해", "category": "loan_limit"},
                 {
                     "message": "매달 상환 금액을 계산해줘",
-                    "intent": "calculational",
                     "category": "monthly_payment",
                     "params": {"loan_amount": 30000000, "rate": 5.5, "term_months": 36},
                 },
