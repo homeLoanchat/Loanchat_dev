@@ -48,6 +48,17 @@ class RouterConfig:
     info_score_threshold: float = 0.55
     fallback_message: str = "현재는 답변을 생성하지 못했습니다. 내용을 조금 더 구체적으로 알려주시면 다시 시도할게요."
     require_params_for_calc: bool = True
+    require_fields_for_calc: tuple[str, ...] = (
+        "property_value",
+        "annual_income",
+        "existing_debt_payment",
+        "interest_rate",
+        "term_months",
+        "repayment_type",
+        "region",
+        "occupancy",
+        "house_count",
+    )
 
 
 DEFAULT_CONFIG = RouterConfig()
@@ -72,32 +83,51 @@ def route(
     if not state.user_query:
         return _fallback(state, config, code=INTENT_ERROR_CODE, reason="empty_query")
 
+    state.inputs = dict(state.inputs or {})
+    if state.inputs:
+        for key, value in state.inputs.items():
+            state.slots.setdefault(key, value)
+
+    analysis: dict[str, Any] | None = None
+
     # 1) Intent/slot 분석
     if intent_hint:
         state.intent = intent_hint
         state.mode = intent_hint
     else:
         intent_started = perf_counter()
-        analysis = extract_intent_and_slots(state.user_query)
+        raw = extract_intent_and_slots(state.user_query)
         intent_elapsed = (perf_counter() - intent_started) * 1000.0
         track_latency("intent_analysis", value=intent_elapsed)
         _record_latency(state, "intent_analysis_ms", intent_elapsed)
-        state.intent = (analysis.get("intent") or "info") if isinstance(analysis, dict) else "info"
+        analysis = raw if isinstance(raw, dict) else None
+
+    if isinstance(analysis, dict):
+        candidate_intent = analysis.get("intent")
+        if isinstance(candidate_intent, str):
+            state.intent = candidate_intent
         if state.intent not in {"info", "calc"}:
             state.intent = "info"
         state.mode = state.intent
-        slots = analysis.get("slots") if isinstance(analysis, dict) else None
+        slots = analysis.get("slots")
         if isinstance(slots, dict):
             state.slots.update(slots)
             state.inputs = {**state.inputs, **slots}
-        confidence = analysis.get("confidence") if isinstance(analysis, dict) else None
-        if confidence:
+        confidence = analysis.get("confidence")
+        if isinstance(confidence, dict):
             state.metrics["intent_confidence"] = confidence
+            state.metrics.setdefault("intent_signals", {})["confidence_score"] = confidence.get("score")
             state.reason = confidence.get("reason")
+    else:
+        state.intent = state.intent or "info"
+        state.mode = state.intent
+
+    _maybe_force_calc(state, analysis)
+    state.metrics.setdefault("intent_signals", {})["forced_calc"] = state.mode == "calc"
 
     # 2) Intent에 따라 분기
     if state.mode == "info":
-        return _handle_information(state, retriever, config)
+        return _handle_information(state, retriever, compute, config)
     if state.mode == "calc":
         return _handle_calculation(state, compute, config)
 
@@ -107,6 +137,7 @@ def route(
 def _handle_information(
     state: OrchestrationState,
     retriever: Optional[RetrievalRunner],
+    compute: Optional[ComputeRunner],
     config: RouterConfig,
 ) -> OrchestrationState:
     if retriever is None:
@@ -149,6 +180,12 @@ def _handle_information(
         state.reason = LOW_CONFIDENCE_CODE
         return state
 
+    if compute and _should_retry_as_calc(state):
+        state.metrics.setdefault("intent_signals", {})["info_to_calc_retry"] = True
+        state.mode = "calc"
+        state.intent = "calc"
+        return _handle_calculation(state, compute, config)
+
     return _fallback(
         state,
         config,
@@ -168,7 +205,35 @@ def _handle_calculation(
 
     params = state.inputs or {}
     if config.require_params_for_calc and not params:
-        return _fallback(state, config, code=MISSING_PARAMS_CODE, reason="params_required")
+        state = _fallback(state, config, code=MISSING_PARAMS_CODE, reason="params_required")
+        state.response_message = _build_missing_params_message(list(config.require_fields_for_calc))
+        state.response_data = {
+            "status": "need_inputs",
+            "code": MISSING_PARAMS_CODE,
+            "reason": "params_required",
+            "missing": list(config.require_fields_for_calc),
+        }
+        state.metrics["missing_fields"] = list(config.require_fields_for_calc)
+        return state
+
+    missing = _missing_calc_fields(params, config.require_fields_for_calc)
+    if missing:
+        state = _fallback(
+            state,
+            config,
+            code=MISSING_PARAMS_CODE,
+            reason="missing_required_inputs",
+            details={"missing": missing},
+        )
+        state.response_message = _build_missing_params_message(missing)
+        state.response_data = {
+            "status": "need_inputs",
+            "code": MISSING_PARAMS_CODE,
+            "reason": "missing_required_inputs",
+            "missing": missing,
+        }
+        state.metrics["missing_fields"] = missing
+        return state
 
     try:
         started = perf_counter()
@@ -268,6 +333,92 @@ def _record_token_usage(state: OrchestrationState, prefix: str, payload: dict[st
         "prompt": prompt_tokens,
         "completion": completion_tokens,
     }
+
+
+def _maybe_force_calc(state: OrchestrationState, analysis: dict[str, Any] | None) -> None:
+    """정보형으로 분류됐더라도 수치 신호가 강하면 계산형으로 전환한다."""
+
+    if state.mode == "calc":
+        return
+
+    slots = state.slots or {}
+    has_amount = isinstance(slots.get("loan_amount"), (int, float))
+    has_interest = isinstance(slots.get("interest_rate"), (int, float))
+    has_term = isinstance(slots.get("term_months"), int) and slots.get("term_months") > 0
+
+    calc_bias = sum(
+        1 for flag in (has_amount, has_interest, has_term) if flag
+    )
+
+    confidence_score = None
+    if isinstance(analysis, dict):
+        confidence = analysis.get("confidence")
+        if isinstance(confidence, dict):
+            try:
+                confidence_score = float(confidence.get("score")) if confidence.get("score") is not None else None
+            except (TypeError, ValueError):
+                confidence_score = None
+
+    if confidence_score is not None and confidence_score >= 0.7 and analysis and analysis.get("intent") == "calc":
+        state.intent = "calc"
+        state.mode = "calc"
+        state.metrics.setdefault("intent_signals", {})["forced_calc_reason"] = "llm_high_confidence"
+        return
+
+    if calc_bias >= 1:
+        state.intent = "calc"
+        state.mode = "calc"
+        state.metrics.setdefault("intent_signals", {})["forced_calc_reason"] = {
+            "calc_bias": calc_bias,
+            "confidence_score": confidence_score,
+        }
+
+
+def _missing_calc_fields(params: dict[str, Any], required: tuple[str, ...]) -> list[str]:
+    missing: list[str] = []
+    for key in required:
+        value = params.get(key)
+        if value in (None, "", []):
+            missing.append(key)
+    return missing
+
+
+def _build_missing_params_message(missing: list[str]) -> str:
+    labels = {
+        "property_value": "주택가격(또는 담보평가액)",
+        "annual_income": "연소득",
+        "existing_debt_payment": "기존 부채 월상환액",
+        "interest_rate": "희망 금리(연)",
+        "term_months": "상환 기간(개월)",
+        "repayment_type": "상환 방식",
+        "region": "지역/규제구역",
+        "occupancy": "실거주 여부",
+        "house_count": "보유 주택 수",
+    }
+
+    if not missing:
+        return "계산을 진행할 수 있도록 필요한 정보를 조금 더 알려주세요."
+
+    readable = [labels.get(item, item) for item in missing]
+    joined = ", ".join(readable)
+    return f"계산 결과를 위해 다음 정보를 알려주시면 한도를 산출할 수 있어요: {joined}."
+
+
+def _should_retry_as_calc(state: OrchestrationState) -> bool:
+    """정보형 검색 신뢰도가 낮을 때 계산형으로 재시도할지 판단."""
+
+    slots = state.slots or {}
+    if not slots:
+        return False
+    has_amount = isinstance(slots.get("loan_amount"), (int, float))
+    has_interest = isinstance(slots.get("interest_rate"), (int, float))
+    has_term = isinstance(slots.get("term_months"), int) and slots.get("term_months") > 0
+    calc_signals = sum(1 for flag in (has_amount, has_interest, has_term) if flag)
+    if calc_signals < 2:
+        return False
+    if state.metrics.get("intent_signals", {}).get("info_to_calc_retry"):
+        return False
+    return True
 
 
 __all__ = ["route", "RouterConfig", "DEFAULT_CONFIG"]

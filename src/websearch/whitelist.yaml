@@ -4,10 +4,12 @@
 # - paths는 접두사(prefix) 비교를 수행합니다.
 
 domains:
-  - domain: www.fsc.go.kr      # 금융위원회
-  - domain: www.fss.or.kr      # 금융감독원
-  - domain: www.bok.or.kr      # 한국은행
-  - domain: www.kofia.or.kr    # 금융투자협회
-  - domain: www.kfb.or.kr      # 은행연합회
-  - domain: www.kdic.or.kr     # 예금보험공사
-  - domain: www.koscom.co.kr   # 코스콤 (금융정보)
+  - domain: www.fsc.go.kr # 금융위원회
+  - domain: www.fss.or.kr # 금융감독원
+  - domain: www.bok.or.kr # 한국은행
+  - domain: www.kofia.or.kr # 금융투자협회
+  - domain: www.kfb.or.kr # 은행연합회
+  - domain: www.kdic.or.kr # 예금보험공사
+  - domain: www.koscom.co.kr # 코스콤 (금융정보)
+  - domain: nhuf.molit.go.kr # 주택도시기금
+  - domain: www.hf.go.kr # 한국주택금융공사 (보금자리론 등)
