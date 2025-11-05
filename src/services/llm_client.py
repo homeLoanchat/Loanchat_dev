@@ -33,7 +33,7 @@ class UpstageChatClient:
     """Minimal Upstage chat completions client."""
 
     api_key: str
-    model: str = "solar-mini-chat"
+    model: str = "solar-pro2"
     api_base: str = "https://api.upstage.ai/v1"
     timeout: float = 30.0
 
