@@ -99,11 +99,13 @@ class ComputeService:
             months=months,
             as_dataframe=False,
         )
+        monthly_payment = schedule[0]["payment"] if schedule else 0.0
         return {
             "principal": float(principal),
             "interest_rate": float(interest_rate),
             "months": months,
             "schedule": schedule,
+            "monthly_payment": monthly_payment,
         }
 
     def _handle_payment_sensitivity(self, params: dict[str, Any]) -> dict[str, Any]:

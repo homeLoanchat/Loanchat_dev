@@ -125,6 +125,20 @@ def route(
     _maybe_force_calc(state, analysis)
     state.metrics.setdefault("intent_signals", {})["forced_calc"] = state.mode == "calc"
 
+    if not _is_housing_related(state.user_query, state.slots):
+        logger.info("Out-of-domain query filtered query=%s slots=%s", state.user_query, list(state.slots.keys()))
+        state = _fallback(
+            state,
+            config,
+            code=INTENT_ERROR_CODE,
+            reason="out_of_domain",
+            details={"query": state.user_query},
+        )
+        state.response_message = (
+            "이 챗봇은 주택담보대출 한도와 정책 안내 전용입니다. 관련 대출 질문으로 다시 요청해 주세요."
+        )
+        return state
+
     # 2) Intent에 따라 분기
     if state.mode == "info":
         return _handle_information(state, retriever, compute, config)
@@ -346,9 +360,7 @@ def _maybe_force_calc(state: OrchestrationState, analysis: dict[str, Any] | None
     has_interest = isinstance(slots.get("interest_rate"), (int, float))
     has_term = isinstance(slots.get("term_months"), int) and slots.get("term_months") > 0
 
-    calc_bias = sum(
-        1 for flag in (has_amount, has_interest, has_term) if flag
-    )
+    calc_bias = sum(1 for flag in (has_amount, has_interest, has_term) if flag)
 
     confidence_score = None
     if isinstance(analysis, dict):
@@ -365,7 +377,7 @@ def _maybe_force_calc(state: OrchestrationState, analysis: dict[str, Any] | None
         state.metrics.setdefault("intent_signals", {})["forced_calc_reason"] = "llm_high_confidence"
         return
 
-    if calc_bias >= 1:
+    if calc_bias >= 2:
         state.intent = "calc"
         state.mode = "calc"
         state.metrics.setdefault("intent_signals", {})["forced_calc_reason"] = {
@@ -419,6 +431,128 @@ def _should_retry_as_calc(state: OrchestrationState) -> bool:
     if state.metrics.get("intent_signals", {}).get("info_to_calc_retry"):
         return False
     return True
+
+
+def _is_housing_related(query: str, slots: dict[str, Any]) -> bool:
+    """간단한 키워드와 슬롯 정보를 바탕으로 도메인 적합성을 점검한다."""
+
+    if not query:
+        return False
+
+    normalized = query.lower()
+    keywords = {
+        "mortgage",
+        "mortgages",
+        "mortgage loan",
+        "home loan",
+        "home loans",
+        "home equity",
+        "housing loan",
+        "housing loans",
+        "housing finance",
+        "loan",
+        "loans",
+        "loan limit",
+        "loan eligibility",
+        "credit line",
+        "line of credit",
+        "credit score",
+        "debt consolidation",
+        "house",
+        "housing",
+        "residential",
+        "apartment",
+        "villa",
+        "condo",
+        "condominium",
+        "townhouse",
+        "real estate",
+        "ltv",
+        "loan-to-value",
+        "dti",
+        "dsr",
+        "gdsr",
+        "interest",
+        "interest rate",
+        "floating rate",
+        "fixed rate",
+        "apr",
+        "principal",
+        "installment",
+        "payment",
+        "monthly payment",
+        "repayment",
+        "amortization",
+        "balloon payment",
+        "bridge loan",
+        "construction loan",
+        "refinance",
+        "refinancing",
+        "equity",
+        "home equity",
+        "deposit loan",
+        "reverse mortgage",
+        "전세",
+        "월세",
+        "전세자금",
+        "전세대출",
+        "주택담보대출",
+        "주담대",
+        "담보",
+        "담보대출",
+        "주택",
+        "부동산",
+        "아파트",
+        "빌라",
+        "오피스텔",
+        "실거주",
+        "거주",
+        "무주택",
+        "1주택",
+        "다주택",
+        "보금자리",
+        "디딤돌",
+        "신혼희망타운",
+        "청년전용",
+        "금리",
+        "이자",
+        "상환",
+        "원리금",
+        "한도",
+        "대환",
+        "채무",
+        "부채",
+        "담보설정",
+        "주택금융",
+        "주택자금",
+        "규제지역",
+        "투기과열지구",
+        "조정대상지역",
+        "고정금리",
+        "변동금리",
+        "상환비율",
+        "총부채",
+        "총원리금",
+    }
+    if any(token in normalized for token in keywords):
+        return True
+
+    loan_related_slots = {
+        "loan_amount",
+        "principal",
+        "collateral_value",
+        "property_value",
+        "interest_rate",
+        "interest_rates",
+        "term_months",
+        "annual_income",
+        "total_debt_payment",
+        "annual_debt_service",
+    }
+    if slots and set(slots.keys()).intersection(loan_related_slots):
+        return True
+
+    return False
 
 
 __all__ = ["route", "RouterConfig", "DEFAULT_CONFIG"]
