@@ -2,22 +2,23 @@ cache:
   directory: data/web_cache
   ttl_seconds: 86400
 provider:
-  base_url: https://api.upstage.ai/v1/web-search
+  base_url: https://serpapi.com/search
   method: GET
-  query_param: query
+  query_param: q
   payload: params
   params:
-    language: ko
-    size: 5
-  headers:
-    Authorization: Bearer ${UPSTAGE_SEARCH_KEY}
+    api_key: ${SERPAPI_KEY}
+    engine: google
+    hl: ko
+    gl: kr
+    num: 5
+  headers: {}
   timeout: 8
   max_results: 5
   response:
     items_path:
-      - data
-      - results
+      - organic_results
     title_field: title
-    url_field: url
+    url_field: link
     snippet_field: snippet
 whitelist_path: src/websearch/whitelist.yaml

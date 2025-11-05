@@ -65,6 +65,7 @@ CALC_PARAM_LABELS: dict[str, str] = {
 
 logger = logging.getLogger(__name__)
 ENV_TOKEN_PATTERN = re.compile(r"\$\{([^}]+)\}")
+_ENV_LOADED = False
 
 
 class RetrievalRunner(Protocol):
@@ -259,6 +260,7 @@ def _get_retriever() -> RetrievalRunner:
     web_config: WebSearchConfig | None = None
     web_provider: SearchProvider | None = None
     try:
+        _ensure_env_loaded()
         raw_config = load_websearch_config()
         resolved_config = _resolve_websearch_config(raw_config)
         if resolved_config is not None:
@@ -960,6 +962,27 @@ def _substitute_env_tokens(values: dict[str, Any]) -> tuple[dict[str, Any], set[
                 missing.add(token.strip())
 
     return resolved, missing
+
+
+def _ensure_env_loaded() -> None:
+    """Ensure .env variables are loaded once for worker processes."""
+
+    global _ENV_LOADED
+    if _ENV_LOADED:
+        return
+
+    try:
+        from dotenv import load_dotenv
+    except Exception:  # noqa: BLE001
+        _ENV_LOADED = True
+        return
+
+    try:
+        load_dotenv(override=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(".env load skipped: %s", exc)
+    finally:
+        _ENV_LOADED = True
 
 
 def _normalize_calc_category_token(value: Any) -> str | None:
