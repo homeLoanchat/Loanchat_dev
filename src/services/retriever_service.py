@@ -220,7 +220,8 @@ def _compose_with_llm(
         "당신은 금융 상담 전문가입니다. "
         "주어진 자료를 기반으로 한국어로 간결하고 정확한 답변을 제공합니다. "
         "추측하거나 자료에 없는 내용은 만들지 말고, 필요한 경우 추가 정보를 요청하세요. "
-        "항상 핵심 답변 2~3문장과 근거를 명시하고, 필요한 조건이나 주의사항이 있다면 bullet으로 정리하세요."
+        "핵심 답변을 2~3문장으로 정리하고, 필요한 조건이나 주의사항이 있다면 bullet으로 정리하세요. "
+        "출처 번호나 괄호 표기 없이 자연스러운 문장으로 설명합니다."
     )
 
     user_prompt = (
@@ -229,9 +230,9 @@ def _compose_with_llm(
         f"{context_text}\n\n"
         "위 자료만을 근거로 다음을 수행하세요:\n"
         "1. 질문에 대한 핵심 답변을 2~3문장으로 작성합니다.\n"
-        "2. 반드시 사용한 근거 자료 번호 또는 제목을 괄호로 표기합니다. 예: (근거: 문서 1)\n"
-        "3. 추가 조건이나 주의사항이 있다면 bullet 리스트로 정리합니다.\n"
-        "4. 자료에 없는 내용은 추측하지 말고, 필요한 경우 추가 정보를 요청합니다.\n"
+        "2. 추가 조건이나 주의사항이 있다면 bullet 리스트로 정리합니다.\n"
+        "3. 자료에 없는 내용은 추측하지 말고, 필요한 경우 추가 정보를 요청합니다.\n"
+        "4. 근거 번호, 괄호형 출처 표기 등은 사용하지 마십시오.\n"
     )
 
     temperature = _safe_float(os.getenv("UPSTAGE_CHAT_TEMPERATURE"), default=0.2)
@@ -279,16 +280,25 @@ def _format_documents_for_prompt(documents: Iterable[dict[str, Any]]) -> list[st
             break
         metadata = doc.get("metadata") if isinstance(doc, dict) else {}
         title = None
+        snippet_source = None
+        url = None
+        if isinstance(doc, dict):
+            title = doc.get("title") or doc.get("name")
+            snippet_source = doc.get("snippet") or doc.get("summary") or doc.get("text")
         if isinstance(metadata, dict):
-            title = (
-                metadata.get("doc_title")
-                or metadata.get("title")
-                or metadata.get("doc_name")
-            )
-        title = title or f"문서 {index}"
-        text = doc.get("text") if isinstance(doc, dict) else None
-        snippet = _trim_text(text or "")
-        items.append(f"[문서 {index}] {title}\n{snippet}")
+            title = title or metadata.get("doc_title") or metadata.get("title") or metadata.get("doc_name")
+            url = metadata.get("url") or metadata.get("doc_source") or url
+            snippet_source = snippet_source or metadata.get("snippet")
+        snippet = _trim_text(str(snippet_source or ""))
+        if not title and snippet:
+            title = snippet.split("\n", 1)[0]
+        if not title and url:
+            title = str(url)
+        title = title or "내부 자료"
+        line = f"{title}"
+        if url:
+            line = f"{title} ({url})"
+        items.append(f"{line}\n{snippet}")
     return items
 
 
@@ -299,14 +309,14 @@ def _format_web_results_for_prompt(results: Iterable[dict[str, Any]]) -> list[st
             break
         if not isinstance(item, dict):
             continue
-        title = item.get("title") or item.get("name") or f"웹 자료 {index}"
+        title = item.get("title") or item.get("name") or item.get("url") or "웹 자료"
         snippet = item.get("snippet") or item.get("description") or item.get("summary") or ""
         url = item.get("url")
         context = _trim_text(str(snippet))
         if url:
-            items.append(f"[웹 {index}] {title} ({url})\n{context}")
+            items.append(f"{title} ({url})\n{context}")
         else:
-            items.append(f"[웹 {index}] {title}\n{context}")
+            items.append(f"{title}\n{context}")
     return items
 
 

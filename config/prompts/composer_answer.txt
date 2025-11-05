@@ -1,5 +1,5 @@
 # 응답 조립(composer) 프롬프트
-# - 정보형: 내부 문서 요약 → 웹 검색 보강 → 출처 링크 → 주의사항 순으로 구성하세요.
+# - 정보형: 핵심 요약과 신뢰도, 주의 문구를 간결하게 제공합니다.
 # - 계산형: 계산 가정/결과/정책/상환 요약을 카드 형태로 제시하고 면책 문구를 포함하세요.
 # - 응답은 Markdown을 사용하며 bullet과 굵은 텍스트를 적절히 배치하세요.
 
@@ -30,30 +30,11 @@
 - 가정: 없음
 {% endif %}
 
-**출처**
-{% for src in calc.sources %}- {{ src }}
-{% else %}- 계산 엔진 산출 결과 기준
-{% endfor %}
-
 > 본 결과는 참고용이며 실제 한도와 금리는 금융기관 심사 결과에 따라 달라질 수 있습니다. 최신 심사 기준은 취급 금융기관에 확인하세요.
 
 {% else %}
 **요약**
 {{ summary | truncate(350, True, '...') }}
-
-{% if info.documents %}
-**내부 문서**
-{% for item in info.documents[:5] %}
-- {% if item.url %}[{{ item.title }}]({{ item.url }}){% else %}{{ item.title }}{% endif %}{% if item.snippet %}: {{ item.snippet | truncate(160, True, '...') }}{% endif %}
-{% endfor %}
-{% endif %}
-
-{% if info.web %}
-**웹 검색 보강**
-{% for item in info.web[:3] %}
-- {% if item.url %}[{{ item.title }}]({{ item.url }}){% else %}{{ item.title }}{% endif %}{% if item.snippet %}: {{ item.snippet | truncate(140, True, '...') }}{% endif %}
-{% endfor %}
-{% endif %}
 
 {% if confidence %}
 **신뢰도**
@@ -64,13 +45,6 @@
 - 점수: -
 - 사유: (표시할 데이터 없음)
 {% endif %}
-
-**출처 목록**
-{% for src in info.sources %}
-- {{ src }}
-{% else %}
-- 일치하는 내부 문서가 부족하여 요약 정보만 제공합니다.
-{% endfor %}
 
 > 실제 취급 조건은 금융기관 심사와 약관에 따라 달라질 수 있습니다. 최신 공시일이 12개월 이상 지났다면 업데이트가 필요합니다.
 {% endif %}
