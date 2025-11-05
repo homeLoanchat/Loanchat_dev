@@ -17,6 +17,7 @@ def _find_prompts_dir() -> Path:
         here.parents[2] / "prompts",   # 프로젝트 루트/prompts (권장)
         here.parents[1] / "prompts",   # src/prompts
         here.parent / "prompts",       # orchestration/prompts
+        here.parents[2] / "config" / "prompts",  # config/prompts (운영 설정)
     ]
     for p in candidates:
         if p.exists():
@@ -42,33 +43,9 @@ _FALLBACK = """\
 {% if calc.assumptions %}
 가정: {{ calc.assumptions | join(", ") }}
 {% endif %}
-{% if calc.sources %}
-근거:
-{% for src in calc.sources %}
-- {{ src }}
-{% endfor %}
-{% endif %}
 {% else -%}
 정보 요약
 {{ summary }}
-{% if info.documents %}
-내부 문서
-{% for item in info.documents %}
-- {{ item.title }}{% if item.snippet %}: {{ item.snippet }}{% endif %}{% if item.url %} ({{ item.url }}){% endif %}
-{% endfor %}
-{% endif %}
-{% if info.web %}
-웹 검색
-{% for item in info.web %}
-- {{ item.title }}{% if item.snippet %}: {{ item.snippet }}{% endif %}{% if item.url %} ({{ item.url }}){% endif %}
-{% endfor %}
-{% endif %}
-{% if info.sources %}
-근거
-{% for src in info.sources %}
-- {{ src }}
-{% endfor %}
-{% endif %}
 {% if confidence %}
 {% set passed = confidence.get("passed") if confidence is mapping else None %}
 {% set score = confidence.get("score") if confidence is mapping else None %}
@@ -128,8 +105,12 @@ def _summarize_documents(documents: Iterable[dict[str, Any]]) -> list[dict[str, 
             title = title or metadata.get("doc_title") or metadata.get("title")
             url = url or metadata.get("url") or metadata.get("doc_source")
             snippet = snippet or metadata.get("snippet")
+        if not title and snippet:
+            title = _truncate(str(snippet))
+        if not title and url:
+            title = str(url)
         if not title:
-            title = f"문서 {idx + 1}"
+            continue
         if snippet:
             snippet = _truncate(str(snippet))
         if url:
