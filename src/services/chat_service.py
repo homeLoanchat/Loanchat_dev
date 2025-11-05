@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass, replace
@@ -62,6 +63,21 @@ CALC_PARAM_LABELS: dict[str, str] = {
     "months": "상환 개월 수",
 }
 
+CALC_CATEGORY_DISPLAY_LABELS: dict[str, str] = {
+    "ltv": "LTV (담보인정비율)",
+    "dti": "DTI (총부채상환비율)",
+    "dsr": "DSR (총부채원리금상환비율)",
+    "amortization": "월 상환금액 (원리금 균등)",
+    "monthly_payment": "월 상환금액 (원리금 균등)",
+    "payment_sensitivity": "금리 민감도 분석",
+}
+
+RETRIEVAL_VALIDATION_FALLBACK_MESSAGE = (
+    "검색 결과를 검증하지 못했습니다. 질문을 조금 더 구체적으로 알려 주세요."
+)
+COMPUTE_VALIDATION_FALLBACK_MESSAGE = (
+    "계산 결과를 검증하지 못했습니다. 입력값을 다시 확인해 주세요."
+)
 
 logger = logging.getLogger(__name__)
 ENV_TOKEN_PATTERN = re.compile(r"\$\{([^}]+)\}")
@@ -167,12 +183,33 @@ class ChatService:
             )
             elapsed_ms = round((perf_counter() - started) * 1000.0, 3)
             retrieval_payload = _attach_latency(retrieval_payload, elapsed_ms)
+            validation = _validate_retrieval_payload(
+                retrieval_payload,
+                allow_missing_confidence=getattr(self._retriever, "is_mock", False),
+            )
+            message_text = "정보형 답변을 생성했습니다."
+            if not validation.passed:
+                logger.warning(
+                    "정보형 응답 검증 실패 reasons=%s category=%s",
+                    validation.reasons,
+                    request.category,
+                )
+                retrieval_payload = _build_retrieval_validation_failure_payload(
+                    retrieval_payload,
+                    reasons=validation.reasons,
+                )
+                message_text = RETRIEVAL_VALIDATION_FALLBACK_MESSAGE
+            retrieval_payload = _attach_validation_metadata(
+                retrieval_payload,
+                validation,
+                stage="retrieval",
+            )
             retrieval_payload = _attach_intent_metadata(retrieval_payload, resolution)
             return build_chat_response(
                 intent=intent,
                 category=request.category,
                 data=retrieval_payload,
-                message="정보형 답변을 생성했습니다.",
+                message=message_text,
                 generated_at=generated_at,
                 mock=getattr(self._retriever, "is_mock", False),
             )
@@ -188,8 +225,9 @@ class ChatService:
             response_category = normalized_category or request.category
 
             missing: list[str] = []
+            needs_calc_type = False
             if calc_type is None:
-                missing.append("category")
+                needs_calc_type = True
             else:
                 required = CALC_REQUIRED_PARAMS.get(calc_type, [])
                 for key in required:
@@ -202,13 +240,16 @@ class ChatService:
                     if key not in missing:
                         missing.append(key)
 
-            if missing:
+            if missing or needs_calc_type:
                 compute_payload = {
                     "needs_input": True,
                     "missing_params": missing,
                     "calc_type": calc_type.value if calc_type else None,
                     "params": params,
                 }
+                if needs_calc_type:
+                    compute_payload["needs_calc_type"] = True
+                    compute_payload["calc_type_options"] = _build_calc_type_options()
             else:
                 started = perf_counter()
                 compute_payload = self._compute.run(
@@ -232,11 +273,34 @@ class ChatService:
                         highlights = summary_payload.get("highlights")
                         if highlights:
                             compute_payload["highlights"] = highlights
+            validation = _validate_compute_payload(compute_payload, calc_type)
+            if not validation.passed:
+                logger.warning(
+                    "계산형 응답 검증 실패 reasons=%s category=%s calc_type=%s",
+                    validation.reasons,
+                    response_category,
+                    calc_type.value if calc_type else None,
+                )
+                compute_payload = _build_compute_validation_failure_payload(
+                    compute_payload,
+                    calc_type=calc_type,
+                    reasons=validation.reasons,
+                )
+            compute_payload = _attach_validation_metadata(
+                compute_payload,
+                validation,
+                stage="compute",
+            )
             compute_payload = _attach_intent_metadata(compute_payload, resolution)
             message = "계산형 답변을 생성했습니다."
-            if compute_payload.get("needs_input"):
+            if not validation.passed:
+                message = COMPUTE_VALIDATION_FALLBACK_MESSAGE
+            elif compute_payload.get("needs_input"):
                 missing = compute_payload.get("missing_params") or []
-                message = _build_missing_param_message(missing, resolution)
+                if compute_payload.get("needs_calc_type"):
+                    message = _build_missing_calc_type_and_params_message(missing)
+                else:
+                    message = _build_missing_param_message(missing, resolution)
             return build_chat_response(
                 intent=intent,
                 category=response_category,
@@ -339,6 +403,12 @@ class IntentResolution:
     confidence: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ValidationOutcome:
+    passed: bool
+    reasons: list[str]
+
+
 def _resolve_intent(request: ChatRequest) -> IntentResolution:
     if request.intent is not None:
         return IntentResolution(
@@ -430,6 +500,235 @@ def _attach_intent_metadata(
     return payload
 
 
+def _build_calc_type_options() -> list[dict[str, str]]:
+    options: list[dict[str, str]] = []
+    seen_types: set[CalcType] = set()
+    for key in sorted(CALC_CATEGORY_MAP.keys()):
+        calc_type = CALC_CATEGORY_MAP[key]
+        if calc_type in seen_types:
+            continue
+        label = CALC_CATEGORY_DISPLAY_LABELS.get(key) or CALC_CATEGORY_DISPLAY_LABELS.get(calc_type.value)
+        label = label or calc_type.value
+        options.append({"value": calc_type.value, "label": label})
+        seen_types.add(calc_type)
+    return options
+
+
+def _attach_validation_metadata(
+    payload: dict[str, Any] | None,
+    outcome: ValidationOutcome,
+    *,
+    stage: str,
+) -> dict[str, Any]:
+    payload_dict = dict(payload or {})
+
+    validation_meta = dict(payload_dict.get("validation") or {})
+    validation_meta["stage"] = stage
+    validation_meta["passed"] = outcome.passed
+    if outcome.reasons:
+        validation_meta["reasons"] = list(outcome.reasons)
+    else:
+        validation_meta.pop("reasons", None)
+    payload_dict["validation"] = validation_meta
+
+    metrics = dict(payload_dict.get("metrics") or {})
+    validation_metrics = dict(metrics.get("validation") or {})
+    validation_metrics["stage"] = stage
+    validation_metrics["passed"] = outcome.passed
+    if outcome.reasons:
+        validation_metrics["reasons"] = list(outcome.reasons)
+    else:
+        validation_metrics.pop("reasons", None)
+    metrics["validation"] = validation_metrics
+    payload_dict["metrics"] = metrics
+    return payload_dict
+
+
+def _validate_retrieval_payload(
+    payload: dict[str, Any] | None,
+    *,
+    allow_missing_confidence: bool = False,
+) -> ValidationOutcome:
+    if not isinstance(payload, dict):
+        return ValidationOutcome(False, ["invalid_payload_type"])
+
+    reasons: list[str] = []
+
+    answer = payload.get("answer")
+    if not isinstance(answer, str) or not answer.strip():
+        reasons.append("missing_answer")
+
+    sources = payload.get("sources")
+    if sources is None:
+        reasons.append("missing_sources")
+    elif not isinstance(sources, list):
+        reasons.append("invalid_sources_type")
+    else:
+        for item in sources:
+            if not isinstance(item, str) or not item.strip():
+                reasons.append("invalid_source_entry")
+                break
+
+    confidence = payload.get("confidence")
+    if isinstance(confidence, dict):
+        passed_flag = confidence.get("passed")
+        if passed_flag is False:
+            reasons.append("low_confidence")
+        elif passed_flag not in (True, False):
+            reasons.append("missing_confidence_flag")
+    elif not allow_missing_confidence:
+        reasons.append("missing_confidence")
+
+    if not reasons:
+        return ValidationOutcome(True, [])
+    return ValidationOutcome(False, list(dict.fromkeys(reasons)))
+
+
+def _build_retrieval_validation_failure_payload(
+    original: dict[str, Any] | None,
+    *,
+    reasons: list[str],
+) -> dict[str, Any]:
+    fallback: dict[str, Any] = {
+        "answer": RETRIEVAL_VALIDATION_FALLBACK_MESSAGE,
+        "sources": [],
+        "fallback": True,
+    }
+    if isinstance(original, dict):
+        for key in ("query", "category", "elapsed_ms"):
+            if key in original:
+                fallback[key] = original[key]
+        metrics = original.get("metrics")
+        if isinstance(metrics, dict):
+            fallback["metrics"] = dict(metrics)
+    if reasons:
+        fallback["validation_reasons"] = list(reasons)
+    return fallback
+
+
+def _validate_compute_payload(
+    payload: dict[str, Any] | None,
+    calc_type: CalcType | None,
+) -> ValidationOutcome:
+    if not isinstance(payload, dict):
+        return ValidationOutcome(False, ["invalid_payload_type"])
+
+    reasons: list[str] = []
+
+    needs_input_flag = payload.get("needs_input")
+    if isinstance(needs_input_flag, bool):
+        needs_input = needs_input_flag
+    else:
+        needs_input = bool(needs_input_flag)
+        if needs_input_flag is not None:
+            reasons.append("invalid_needs_input_flag")
+
+    calc_type_value = payload.get("calc_type")
+    if calc_type_value is None and not needs_input:
+        if calc_type is not None:
+            reasons.append("missing_calc_type")
+    elif calc_type_value is not None and not isinstance(calc_type_value, str):
+        reasons.append("invalid_calc_type")
+
+    params = payload.get("params")
+    if params is not None and not isinstance(params, dict):
+        reasons.append("invalid_params")
+
+    if needs_input:
+        missing_params = payload.get("missing_params")
+        if not isinstance(missing_params, list) or not all(
+            isinstance(item, str) and item.strip() for item in missing_params
+        ):
+            reasons.append("invalid_missing_params")
+    else:
+        result = payload.get("result")
+        if not isinstance(result, dict) or not result:
+            reasons.append("missing_result")
+        else:
+            invalid_numeric = _find_invalid_numeric_entries(result)
+            if invalid_numeric:
+                reasons.append(f"invalid_numeric:{','.join(invalid_numeric)}")
+        if calc_type_value is None:
+            reasons.append("missing_calc_type")
+
+    if not reasons:
+        return ValidationOutcome(True, [])
+    return ValidationOutcome(False, list(dict.fromkeys(reasons)))
+
+
+def _build_compute_validation_failure_payload(
+    original: dict[str, Any] | None,
+    *,
+    calc_type: CalcType | None,
+    reasons: list[str],
+) -> dict[str, Any]:
+    fallback: dict[str, Any] = {
+        "needs_input": True,
+        "missing_params": [],
+        "calc_type": calc_type.value if isinstance(calc_type, CalcType) else None,
+        "params": {},
+        "fallback": True,
+    }
+
+    if isinstance(original, dict):
+        params = original.get("params")
+        if isinstance(params, dict):
+            fallback["params"] = dict(params)
+        missing = original.get("missing_params")
+        if isinstance(missing, list):
+            fallback["missing_params"] = [
+                item for item in missing if isinstance(item, str) and item.strip()
+            ]
+        if "elapsed_ms" in original:
+            fallback["elapsed_ms"] = original["elapsed_ms"]
+        metrics = original.get("metrics")
+        if isinstance(metrics, dict):
+            fallback["metrics"] = dict(metrics)
+        calc_token = original.get("calc_type")
+        if isinstance(calc_token, str) and calc_token.strip():
+            fallback["calc_type"] = calc_token.strip()
+        if bool(original.get("needs_calc_type")):
+            fallback["needs_calc_type"] = True
+        calc_options = original.get("calc_type_options")
+        if isinstance(calc_options, list):
+            fallback["calc_type_options"] = list(calc_options)
+
+    if fallback["calc_type"] is None and calc_type is not None:
+        fallback["calc_type"] = calc_type.value
+
+    if reasons:
+        fallback["validation_reasons"] = list(reasons)
+
+    return fallback
+
+
+def _find_invalid_numeric_entries(value: Any, prefix: str = "") -> list[str]:
+    invalid: list[str] = []
+
+    if isinstance(value, bool):
+        return invalid
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            invalid.append(prefix or "<root>")
+        return invalid
+    if isinstance(value, int):
+        return invalid
+
+    if isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            invalid.extend(_find_invalid_numeric_entries(item, path))
+        return invalid
+
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            path = f"{prefix}[{index}]" if prefix else f"[{index}]"
+            invalid.extend(_find_invalid_numeric_entries(item, path))
+        return invalid
+
+    return invalid
+
+
 def _ensure_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
@@ -458,6 +757,24 @@ def _build_missing_param_message(missing: list[str], resolution: IntentResolutio
     labels = [_humanize_param_name(name) for name in missing]
     joined = ", ".join(labels)
     return f"계산을 완료하려면 다음 정보를 알려 주세요: {joined}"
+
+
+def _build_missing_calc_type_message() -> str:
+    options = _build_calc_type_options()
+    labels = [item["label"] for item in options]
+    if not labels:
+        return "어떤 계산을 도와드릴까요? 예: LTV, DTI, 월 상환금액 계산 등"
+    joined = ", ".join(labels)
+    return f"어떤 계산을 도와드릴까요? 예: {joined}"
+
+
+def _build_missing_calc_type_and_params_message(missing: list[str]) -> str:
+    base = _build_missing_calc_type_message()
+    if not missing:
+        return base
+    labels = [_humanize_param_name(name) for name in missing]
+    joined = ", ".join(labels)
+    return f"{base} 또한 다음 정보를 알려 주세요: {joined}"
 
 
 def _humanize_param_name(name: str) -> str:
