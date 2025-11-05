@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 MAX_CONTEXT_DOCUMENTS = 3
 MAX_CONTEXT_WEB_RESULTS = 2
 MAX_CHARS_PER_CONTEXT = 1200
-DEFAULT_CHAT_MODEL = "solar-1-mini-chat"
+DEFAULT_CHAT_MODEL = "solar-pro2"
 
 
 @dataclass(frozen=True)
