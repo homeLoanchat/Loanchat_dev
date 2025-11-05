@@ -57,6 +57,35 @@ CALC_PARAM_LABELS: dict[str, str] = {
 }
 
 
+def _is_housing_related(message: str, category: str | None) -> bool:
+    """주택담보대출 도메인과 무관한 문의를 걸러낸다."""
+
+    normalized = (message or "").lower()
+    housing_keywords = {
+        "주택",
+        "집",
+        "아파트",
+        "전세",
+        "담보",
+        "대출",
+        "한도",
+        "ltv",
+        "dti",
+        "dsr",
+        "모기지",
+        "지분적립형",
+        "디딤돌",
+        "보금자리",
+        "금리",
+        "대환",
+    }
+    if any(keyword in normalized for keyword in housing_keywords):
+        return True
+
+    category_hint = (category or "").lower()
+    return any(keyword in category_hint for keyword in housing_keywords)
+
+
 class RetrievalRunner(Protocol):
     """정보형 intent에 사용되는 검색 모듈 인터페이스."""
 
@@ -121,6 +150,23 @@ class ChatService:
         """요청 intent에 맞춰 응답을 생성한다."""
 
         generated_at = datetime.now(timezone.utc)
+        if not _is_housing_related(request.message, request.category):
+            payload = {
+                "answer": (
+                    "이 챗봇은 주택담보대출 한도와 정책 안내 전용입니다. "
+                    "관련 대출 질문으로 다시 요청해 주세요."
+                ),
+                "sources": [],
+            }
+            return build_chat_response(
+                intent=ChatIntent.INFORMATIONAL,
+                category=request.category,
+                data=payload,
+                message="도메인 외 질문을 안내 문구로 처리했습니다.",
+                generated_at=generated_at,
+                mock=True,
+            )
+
         resolution = _resolve_intent(request)
         intent = resolution.intent
 

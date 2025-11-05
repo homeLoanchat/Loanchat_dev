@@ -122,6 +122,20 @@ def route(
         state.intent = state.intent or "info"
         state.mode = state.intent
 
+    if not _is_housing_related(state.user_query, state.slots):
+        state = _fallback(
+            state,
+            config,
+            code=INTENT_ERROR_CODE,
+            reason="out_of_domain",
+            details={"query": state.user_query},
+        )
+        state.response_message = (
+            "이 챗봇은 주택담보대출 한도와 정책 안내 전용입니다. "
+            "관련 대출 질문으로 다시 요청해 주세요."
+        )
+        return state
+
     _maybe_force_calc(state, analysis)
     state.metrics.setdefault("intent_signals", {})["forced_calc"] = state.mode == "calc"
 
@@ -333,6 +347,47 @@ def _record_token_usage(state: OrchestrationState, prefix: str, payload: dict[st
         "prompt": prompt_tokens,
         "completion": completion_tokens,
     }
+
+
+def _is_housing_related(query: str, slots: dict[str, Any]) -> bool:
+    """주택담보대출 도메인과 무관한 질문을 빠르게 걸러낸다."""
+
+    normalized = (query or "").lower()
+    housing_keywords = {
+        "주택",
+        "집",
+        "아파트",
+        "전세",
+        "담보",
+        "대출",
+        "한도",
+        "ltv",
+        "dti",
+        "dsr",
+        "모기지",
+        "지분적립형",
+        "디딤돌",
+        "보금자리",
+        "금리",
+        "대환",
+    }
+    if any(keyword in normalized for keyword in housing_keywords):
+        return True
+
+    slot_keys = set((slots or {}).keys())
+    relevant_slots = {
+        "loan_amount",
+        "collateral_value",
+        "annual_income",
+        "interest_rate",
+        "house_price",
+        "mortgage_type",
+        "region",
+        "ltv",
+        "dti",
+        "dsr",
+    }
+    return bool(slot_keys & relevant_slots)
 
 
 def _maybe_force_calc(state: OrchestrationState, analysis: dict[str, Any] | None) -> None:
