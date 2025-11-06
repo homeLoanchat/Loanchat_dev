@@ -301,6 +301,10 @@ class ChatService:
                     message = _build_missing_calc_type_and_params_message(missing)
                 else:
                     message = _build_missing_param_message(missing, resolution)
+            else:
+                message = _build_compute_answer_message(calc_type, compute_payload)
+                if message and isinstance(message, str):
+                    compute_payload.setdefault("answer", message)
             return build_chat_response(
                 intent=intent,
                 category=response_category,
@@ -777,6 +781,113 @@ def _build_missing_calc_type_and_params_message(missing: list[str]) -> str:
     return f"{base} 또한 다음 정보를 알려 주세요: {joined}"
 
 
+def _build_compute_answer_message(
+    calc_type: CalcType | None,
+    payload: dict[str, Any],
+) -> str:
+    summary = payload.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+
+    if calc_type is None:
+        return "계산 결과를 생성했습니다."
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return "계산 결과를 생성했습니다."
+
+    if calc_type is CalcType.LTV:
+        ratio = _to_numeric(result.get("ltv")) or _to_numeric(result.get("ratio"))
+        if ratio is not None:
+            percent_text = _format_percent(ratio * 100.0)
+            parts = [f"LTV는 약 {percent_text}입니다."]
+            collateral = _to_numeric(result.get("collateral_value"))
+            loan_amount = _to_numeric(result.get("loan_amount"))
+            details: list[str] = []
+            if collateral is not None:
+                details.append(f"담보 { _format_currency(collateral) }")
+            if loan_amount is not None:
+                details.append(f"대출 { _format_currency(loan_amount) }")
+            if details:
+                parts.append(f"({', '.join(details)})")
+            return " ".join(parts)
+
+    if calc_type is CalcType.DTI:
+        ratio = _to_numeric(result.get("dti")) or _to_numeric(result.get("ratio"))
+        if ratio is not None:
+            percent_text = _format_percent(ratio * 100.0)
+            income = _to_numeric(result.get("annual_income"))
+            debt = _to_numeric(result.get("total_debt_payment"))
+            details = []
+            if income is not None:
+                details.append(f"연소득 { _format_currency(income) }")
+            if debt is not None:
+                details.append(f"연 부채 상환액 { _format_currency(debt) }")
+            tail = f" ({', '.join(details)})" if details else ""
+            return f"DTI는 약 {percent_text}입니다.{tail}"
+
+    if calc_type is CalcType.DSR:
+        ratio = _to_numeric(result.get("dsr")) or _to_numeric(result.get("ratio"))
+        if ratio is not None:
+            percent_text = _format_percent(ratio * 100.0)
+            income = _to_numeric(result.get("annual_income"))
+            debt = _to_numeric(result.get("annual_debt_service"))
+            details = []
+            if income is not None:
+                details.append(f"연소득 { _format_currency(income) }")
+            if debt is not None:
+                details.append(f"연 부채 원리금 { _format_currency(debt) }")
+            tail = f" ({', '.join(details)})" if details else ""
+            return f"DSR은 약 {percent_text}입니다.{tail}"
+
+    if calc_type is CalcType.AMORTIZATION:
+        payment = _to_numeric(result.get("monthly_payment"))
+        if payment is not None:
+            principal = _to_numeric(result.get("principal")) or _to_numeric(
+                (payload.get("params") or {}).get("principal")
+            )
+            interest_rate = _to_numeric(result.get("interest_rate"))
+            months = _to_numeric(result.get("months"))
+            message = f"예상 월 상환액은 약 { _format_currency(payment) }입니다."
+            details: list[str] = []
+            if principal is not None:
+                details.append(f"원금 { _format_currency(principal) }")
+            if interest_rate is not None:
+                details.append(f"연 이자율 { _format_rate(interest_rate) }")
+            if months is not None and isinstance(months, (int, float)):
+                details.append(f"기간 {int(months)}개월")
+            if details:
+                message += f" ({', '.join(details)})"
+            return message
+
+    if calc_type is CalcType.PAYMENT_SENSITIVITY:
+        sensitivity = result.get("sensitivity")
+        if isinstance(sensitivity, list) and sensitivity:
+            valid_items = [
+                item
+                for item in sensitivity
+                if isinstance(item, dict)
+                and _to_numeric(item.get("interest_rate")) is not None
+                and _to_numeric(item.get("monthly_payment")) is not None
+            ]
+            if valid_items:
+                valid_items.sort(key=lambda item: _to_numeric(item.get("interest_rate")) or 0.0)
+                lowest = valid_items[0]
+                highest = valid_items[-1]
+                low_rate = _format_rate(_to_numeric(lowest.get("interest_rate")) or 0.0)
+                low_payment = _format_currency(_to_numeric(lowest.get("monthly_payment")) or 0.0)
+                if lowest is highest:
+                    return f"금리 {low_rate}일 때 월 상환액은 약 {low_payment}입니다."
+                high_rate = _format_rate(_to_numeric(highest.get("interest_rate")) or 0.0)
+                high_payment = _format_currency(_to_numeric(highest.get("monthly_payment")) or 0.0)
+                return (
+                    f"금리 {low_rate}이면 월 상환액은 약 {low_payment}, "
+                    f"{high_rate}이면 약 {high_payment}입니다."
+                )
+
+    return "계산 결과를 생성했습니다."
+
+
 def _humanize_param_name(name: str) -> str:
     return CALC_PARAM_LABELS.get(name, name)
 
@@ -1232,6 +1343,91 @@ def _is_housing_related(message: str, category: str | None) -> bool:
         "상환유예",
         "금융위원회",
         "금융감독원",
+        "seller financing",
+        "bridge financing",
+        "construction financing",
+        "construction mortgage",
+        "home price",
+        "median home price",
+        "housing market",
+        "부동산 시장",
+        "집값",
+        "분양",
+        "분양가",
+        "분양권",
+        "청약",
+        "청약통장",
+        "특례보금자리론",
+        "보금자리론",
+        "디딤돌대출",
+        "취득세",
+        "재산세",
+        "임대",
+        "임대사업자",
+        "임대소득",
+        "세입자",
+        "집주인",
+        "전월세",
+        "정부지원",
+        "정부 지원",
+        "정부지원대출",
+        "정부 지원 대출",
+        "대출상환",
+        "대출금",
+        "원금",
+        "원금균등",
+        "원리금균등",
+        "체증식",
+        "거치식",
+        "거치기간",
+        "거치",
+        "상환기간",
+        "연장",
+        "만기",
+        "만기연장",
+        "중도상환",
+        "조기상환",
+        "우대금리",
+        "기준금리",
+        "금리인상",
+        "금리인하",
+        "금리변동",
+        "금리전망",
+        "금리동결",
+        "금리인상기",
+        "금융비용",
+        "연이율",
+        "연금리",
+        "연이자",
+        "월이자",
+        "이자비용",
+        "상환계획",
+        "상환표",
+        "대출한도",
+        "한도조회",
+        "주담대 갈아타기",
+        "대환대출",
+        "금융권",
+        "은행",
+        "신용대출",
+        "신용도",
+        "신용등급",
+        "신용점수",
+        "소득증빙",
+        "입주",
+        "입주일",
+        "입주금",
+        "분양대금",
+        "잔금",
+        "계약금",
+        "중도금",
+        "대출상품",
+        "대출비교",
+        "대출상담",
+        "대출조건",
+        "대출절차",
+        "대출심사",
+        "대출서류",
     }
     if any(keyword in normalized for keyword in keywords):
         return True
