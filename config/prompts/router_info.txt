@@ -34,7 +34,7 @@
 ```
 {"query": "DSR이 뭔지 알려줘", "intent": "info", "slots": {}, "confidence": {"score": 0.78}, "next_action": "explain_term"}
 {"query": "LTV 70% 규제가 언제부터 적용됐어?", "intent": "info", "slots": {"metric": "LTV"}, "confidence": {"score": 0.74}, "next_action": "summarize_policy"}
-{"query": "6억 집 대출 한도 기준 좀 알려줘", "intent": "calc", "handoff_reason": "수치+한도 질문 → 계산 우선", "follow_up_explanation": "계산 완료 후 정책 설명 추가"}
+{"query": "6억 집 대출 한도 기준 좀 알려줘", "intent": "calc", "handoff_reason": "추가 계산이 필요해 계산 모듈로 전환", "follow_up_explanation": "계산 완료 후 정책 설명 추가"}
 ```
 
 [추가 질문 템플릿]

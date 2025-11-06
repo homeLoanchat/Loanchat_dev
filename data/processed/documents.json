@@ -5,11 +5,11 @@
     "doc_name": "데이터_공공포털_한국자산관리공사_담보주택매매_이해관계인_물건현황_20251030.json",
     "doc_format": "json",
     "doc_filesize": 1232,
-    "doc_modified_at": "2025-11-04T01:35:03.893392+00:00",
+    "doc_modified_at": "2025-10-31T02:15:14.978000+00:00",
     "doc_raw_characters": 997,
     "doc_clean_characters": 707,
-    "ingested_at": "2025-11-04T02:36:28.370173+00:00",
-    "doc_id": "edb8df640678"
+    "ingested_at": "2025-11-03T11:47:34.397496+00:00",
+    "doc_id": "8112f1443f71"
   },
   {
     "doc_title": "데이터 공공포털 한국주택금융공사 담보정보 20251030",
@@ -17,11 +17,11 @@
     "doc_name": "데이터_공공포털_한국주택금융공사_담보정보_20251030.json",
     "doc_format": "json",
     "doc_filesize": 151759,
-    "doc_modified_at": "2025-11-04T01:35:03.909555+00:00",
+    "doc_modified_at": "2025-10-31T02:15:14.978758+00:00",
     "doc_raw_characters": 120750,
     "doc_clean_characters": 77211,
-    "ingested_at": "2025-11-04T02:36:28.401486+00:00",
-    "doc_id": "abefafbcaa76"
+    "ingested_at": "2025-11-03T11:47:34.403266+00:00",
+    "doc_id": "be479a4533a1"
   },
   {
     "doc_title": "데이터 공공포털 한국주택금융공사 주택금융 및 보금자리론 실태조사 주택담보대출금액 대출원금 20251030",
@@ -29,11 +29,83 @@
     "doc_name": "데이터_공공포털_한국주택금융공사_주택금융_및_보금자리론_실태조사_주택담보대출금액_대출원금___20251030.json",
     "doc_format": "json",
     "doc_filesize": 13409,
-    "doc_modified_at": "2025-11-04T01:35:03.922547+00:00",
+    "doc_modified_at": "2025-10-31T02:15:14.979170+00:00",
     "doc_raw_characters": 10137,
     "doc_clean_characters": 7459,
-    "ingested_at": "2025-11-04T02:36:28.413055+00:00",
-    "doc_id": "c932d029ddda"
+    "ingested_at": "2025-11-03T11:47:34.403869+00:00",
+    "doc_id": "8bb4ca22e8ff"
+  },
+  {
+    "doc_title": "디딤돌대출1",
+    "doc_source": "data/raw/디딤돌대출1.pdf",
+    "doc_name": "디딤돌대출1.pdf",
+    "doc_format": "pdf",
+    "doc_filesize": 224770,
+    "doc_modified_at": "2025-10-31T02:15:14.980370+00:00",
+    "doc_raw_characters": 2887,
+    "doc_clean_characters": 2856,
+    "ingested_at": "2025-11-03T11:47:34.497999+00:00",
+    "doc_id": "88912cdf4c22"
+  },
+  {
+    "doc_title": "디딤돌대출2",
+    "doc_source": "data/raw/디딤돌대출2.pdf",
+    "doc_name": "디딤돌대출2.pdf",
+    "doc_format": "pdf",
+    "doc_filesize": 200245,
+    "doc_modified_at": "2025-10-31T02:15:14.981256+00:00",
+    "doc_raw_characters": 2587,
+    "doc_clean_characters": 2557,
+    "ingested_at": "2025-11-03T11:47:34.565837+00:00",
+    "doc_id": "08dd26df8afd"
+  },
+  {
+    "doc_title": "생애최초 주택구입자 보금자리론",
+    "doc_source": "data/raw/생애최초 주택구입자 보금자리론.pdf",
+    "doc_name": "생애최초 주택구입자 보금자리론.pdf",
+    "doc_format": "pdf",
+    "doc_filesize": 288359,
+    "doc_modified_at": "2025-10-31T02:15:14.982739+00:00",
+    "doc_raw_characters": 3594,
+    "doc_clean_characters": 3562,
+    "ingested_at": "2025-11-03T11:47:34.669165+00:00",
+    "doc_id": "cb63e88fe0d5"
+  },
+  {
+    "doc_title": "유한책임 보금자리론",
+    "doc_source": "data/raw/유한책임 보금자리론.pdf",
+    "doc_name": "유한책임 보금자리론.pdf",
+    "doc_format": "pdf",
+    "doc_filesize": 284031,
+    "doc_modified_at": "2025-10-31T02:15:14.984037+00:00",
+    "doc_raw_characters": 3588,
+    "doc_clean_characters": 3556,
+    "ingested_at": "2025-11-03T11:47:34.791604+00:00",
+    "doc_id": "7e43672d600b"
+  },
+  {
+    "doc_title": "전세사기피해자 보금자리론",
+    "doc_source": "data/raw/전세사기피해자 보금자리론.pdf",
+    "doc_name": "전세사기피해자 보금자리론.pdf",
+    "doc_format": "pdf",
+    "doc_filesize": 284043,
+    "doc_modified_at": "2025-10-31T02:15:14.985670+00:00",
+    "doc_raw_characters": 3594,
+    "doc_clean_characters": 3562,
+    "ingested_at": "2025-11-03T11:47:34.896366+00:00",
+    "doc_id": "be2d55ce9e9a"
+  },
+  {
+    "doc_title": "주택연금 사전예약 보금자리론",
+    "doc_source": "data/raw/주택연금 사전예약 보금자리론.pdf",
+    "doc_name": "주택연금 사전예약 보금자리론.pdf",
+    "doc_format": "pdf",
+    "doc_filesize": 284177,
+    "doc_modified_at": "2025-10-31T02:15:14.987328+00:00",
+    "doc_raw_characters": 3588,
+    "doc_clean_characters": 3556,
+    "ingested_at": "2025-11-03T11:47:35.018387+00:00",
+    "doc_id": "b9e999440c40"
   },
   {
     "doc_title": "한국주택금융공사 디딤돌대출1 20251030",
@@ -41,11 +113,19 @@
     "doc_name": "한국주택금융공사_디딤돌대출1_20251030.txt",
     "doc_format": "txt",
     "doc_filesize": 6170,
+<<<<<<< HEAD
     "doc_modified_at": "2025-11-04T01:35:04.018866+00:00",
     "doc_raw_characters": 2851,
     "doc_clean_characters": 2843,
     "ingested_at": "2025-11-04T02:36:28.461258+00:00",
     "doc_id": "1a21ab10e279"
+=======
+    "doc_modified_at": "2025-10-31T02:15:14.988075+00:00",
+    "doc_raw_characters": 2851,
+    "doc_clean_characters": 2843,
+    "ingested_at": "2025-11-03T11:47:35.018681+00:00",
+    "doc_id": "63e7aa133dbf"
+>>>>>>> 5a22fb6 (화면에서 작업이 됩니다.)
   },
   {
     "doc_title": "한국주택금융공사 디딤돌대출2 20251030",
@@ -53,11 +133,19 @@
     "doc_name": "한국주택금융공사_디딤돌대출2_20251030.txt",
     "doc_format": "txt",
     "doc_filesize": 5329,
+<<<<<<< HEAD
     "doc_modified_at": "2025-11-04T01:35:04.034667+00:00",
     "doc_raw_characters": 2570,
     "doc_clean_characters": 2562,
     "ingested_at": "2025-11-04T02:36:28.472919+00:00",
     "doc_id": "1edcb8634604"
+=======
+    "doc_modified_at": "2025-10-31T02:15:14.988706+00:00",
+    "doc_raw_characters": 2570,
+    "doc_clean_characters": 2562,
+    "ingested_at": "2025-11-03T11:47:35.018854+00:00",
+    "doc_id": "73f1812c08ee"
+>>>>>>> 5a22fb6 (화면에서 작업이 됩니다.)
   },
   {
     "doc_title": "한국주택금융공사 생애최초 주택구입자 보금자리론 20251030",
@@ -65,11 +153,19 @@
     "doc_name": "한국주택금융공사_생애최초_주택구입자_보금자리론_20251030.txt",
     "doc_format": "txt",
     "doc_filesize": 7786,
+<<<<<<< HEAD
     "doc_modified_at": "2025-11-04T01:35:04.034667+00:00",
     "doc_raw_characters": 3555,
     "doc_clean_characters": 3547,
     "ingested_at": "2025-11-04T02:36:28.485672+00:00",
     "doc_id": "489ced2342d1"
+=======
+    "doc_modified_at": "2025-10-31T02:15:14.989204+00:00",
+    "doc_raw_characters": 3555,
+    "doc_clean_characters": 3547,
+    "ingested_at": "2025-11-03T11:47:35.019061+00:00",
+    "doc_id": "c45ed2379fc4"
+>>>>>>> 5a22fb6 (화면에서 작업이 됩니다.)
   },
   {
     "doc_title": "한국주택금융공사 유한책임 보금자리론 20251030",
@@ -77,11 +173,19 @@
     "doc_name": "한국주택금융공사_유한책임_보금자리론_20251030.txt",
     "doc_format": "txt",
     "doc_filesize": 7780,
+<<<<<<< HEAD
     "doc_modified_at": "2025-11-04T01:35:04.056565+00:00",
     "doc_raw_characters": 3549,
     "doc_clean_characters": 3541,
     "ingested_at": "2025-11-04T02:36:28.496385+00:00",
     "doc_id": "a14fa21cea4a"
+=======
+    "doc_modified_at": "2025-10-31T02:15:14.989606+00:00",
+    "doc_raw_characters": 3549,
+    "doc_clean_characters": 3541,
+    "ingested_at": "2025-11-03T11:47:35.019261+00:00",
+    "doc_id": "acdb59f707a9"
+>>>>>>> 5a22fb6 (화면에서 작업이 됩니다.)
   },
   {
     "doc_title": "한국주택금융공사 전세사기피해자 보금자리론 20251030",
@@ -89,11 +193,19 @@
     "doc_name": "한국주택금융공사_전세사기피해자_보금자리론_20251030.txt",
     "doc_format": "txt",
     "doc_filesize": 7786,
+<<<<<<< HEAD
     "doc_modified_at": "2025-11-04T01:35:04.067621+00:00",
     "doc_raw_characters": 3555,
     "doc_clean_characters": 3547,
     "ingested_at": "2025-11-04T02:36:28.510164+00:00",
     "doc_id": "052d85ced108"
+=======
+    "doc_modified_at": "2025-10-31T02:15:14.990005+00:00",
+    "doc_raw_characters": 3555,
+    "doc_clean_characters": 3547,
+    "ingested_at": "2025-11-03T11:47:35.019451+00:00",
+    "doc_id": "bc2e80318c3f"
+>>>>>>> 5a22fb6 (화면에서 작업이 됩니다.)
   },
   {
     "doc_title": "한국주택금융공사 주택연금 사전예약 보금자리론 20251030",
@@ -101,10 +213,18 @@
     "doc_name": "한국주택금융공사_주택연금_사전예약_보금자리론_20251030.txt",
     "doc_format": "txt",
     "doc_filesize": 7780,
+<<<<<<< HEAD
     "doc_modified_at": "2025-11-04T01:35:04.070043+00:00",
     "doc_raw_characters": 3549,
     "doc_clean_characters": 3541,
     "ingested_at": "2025-11-04T02:36:28.520912+00:00",
     "doc_id": "81a3d4864b9a"
+=======
+    "doc_modified_at": "2025-10-31T02:15:14.992264+00:00",
+    "doc_raw_characters": 3549,
+    "doc_clean_characters": 3541,
+    "ingested_at": "2025-11-03T11:47:35.019640+00:00",
+    "doc_id": "5b48f7d3704e"
+>>>>>>> 5a22fb6 (화면에서 작업이 됩니다.)
   }
 ]
