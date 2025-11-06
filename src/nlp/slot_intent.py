@@ -24,6 +24,16 @@ _CALC_KEYWORDS = {
     "이자",
     "대출",
 }
+_STRONG_CALC_KEYWORDS = {
+    "얼마",
+    "한도",
+    "계산",
+    "원리금",
+    "상환",
+    "ltv",
+    "dti",
+    "dsr",
+}
 _INFO_KEYWORDS = {
     "무엇",
     "설명",
@@ -84,10 +94,18 @@ def _rule_based_analysis(message: str) -> RuleAnalysis:
     calc_hits = sum(1 for kw in _CALC_KEYWORDS if kw in lowered)
     info_hits = sum(1 for kw in _INFO_KEYWORDS if kw in lowered)
     question_hits = sum(1 for kw in _QUESTION_TOKENS if kw in lowered or kw in tokens)
+    has_strong_calc_keyword = any(kw in lowered for kw in _STRONG_CALC_KEYWORDS)
 
     slots = _extract_slots(message)
 
-    if calc_hits > info_hits or (calc_hits and has_number):
+    calc_condition = False
+    if calc_hits and has_number:
+        calc_condition = True
+    elif calc_hits > info_hits:
+        if has_number or has_strong_calc_keyword or calc_hits >= 2:
+            calc_condition = True
+
+    if calc_condition:
         intent = "calc"
         base = 0.55 + min(calc_hits, 3) * 0.1
         if has_number:

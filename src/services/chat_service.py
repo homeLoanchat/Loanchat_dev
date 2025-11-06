@@ -84,6 +84,35 @@ ENV_TOKEN_PATTERN = re.compile(r"\$\{([^}]+)\}")
 _ENV_LOADED = False
 
 
+def _is_housing_related(message: str, category: str | None) -> bool:
+    """주택담보대출 도메인과 무관한 문의를 걸러낸다."""
+
+    normalized = (message or "").lower()
+    housing_keywords = {
+        "주택",
+        "집",
+        "아파트",
+        "전세",
+        "담보",
+        "대출",
+        "한도",
+        "ltv",
+        "dti",
+        "dsr",
+        "모기지",
+        "지분적립형",
+        "디딤돌",
+        "보금자리",
+        "금리",
+        "대환",
+    }
+    if any(keyword in normalized for keyword in housing_keywords):
+        return True
+
+    category_hint = (category or "").lower()
+    return any(keyword in category_hint for keyword in housing_keywords)
+
+
 class RetrievalRunner(Protocol):
     """정보형 intent에 사용되는 검색 모듈 인터페이스."""
 
