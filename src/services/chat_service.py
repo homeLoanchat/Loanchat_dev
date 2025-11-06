@@ -38,6 +38,8 @@ CALC_CATEGORY_MAP: dict[str, CalcType] = {
     "dsr": CalcType.DSR,
     "amortization": CalcType.AMORTIZATION,
     "payment_sensitivity": CalcType.PAYMENT_SENSITIVITY,
+    "prepayment_fee": CalcType.PREPAYMENT_FEE,
+    "prepayment": CalcType.PREPAYMENT_FEE,
 }
 
 CALCULATIONAL_CATEGORIES = set(CALC_CATEGORY_MAP.keys())
@@ -48,6 +50,7 @@ CALC_REQUIRED_PARAMS: dict[CalcType, list[str]] = {
     CalcType.DSR: ["annual_income", "annual_debt_service"],
     CalcType.AMORTIZATION: ["principal", "interest_rate", "months"],
     CalcType.PAYMENT_SENSITIVITY: ["principal", "interest_rates", "months"],
+    CalcType.PREPAYMENT_FEE: ["principal", "fee_rate"],
 }
 
 CALC_PARAM_LABELS: dict[str, str] = {
@@ -58,9 +61,12 @@ CALC_PARAM_LABELS: dict[str, str] = {
     "total_debt_payment": "총 부채 상환액",
     "annual_debt_service": "연간 부채 상환액",
     "principal": "대출 원금",
+    "principal_remaining": "대출 잔액",
+    "principal_outstanding": "대출 잔액",
     "interest_rate": "연 이자율(%)",
     "interest_rates": "이자율 목록",
     "months": "상환 개월 수",
+    "fee_rate": "중도상환 수수료율(%)",
 }
 
 CALC_CATEGORY_DISPLAY_LABELS: dict[str, str] = {
@@ -70,6 +76,7 @@ CALC_CATEGORY_DISPLAY_LABELS: dict[str, str] = {
     "amortization": "월 상환금액 (원리금 균등)",
     "monthly_payment": "월 상환금액 (원리금 균등)",
     "payment_sensitivity": "금리 민감도 분석",
+    "prepayment_fee": "중도상환 수수료",
 }
 
 RETRIEVAL_VALIDATION_FALLBACK_MESSAGE = (
@@ -251,6 +258,7 @@ class ChatService:
             calc_type: CalcType | None = None
             if normalized_category:
                 calc_type = CALC_CATEGORY_MAP.get(normalized_category)
+                params.setdefault("category", normalized_category)
             response_category = normalized_category or request.category
 
             missing: list[str] = []
@@ -275,6 +283,7 @@ class ChatService:
                     "missing_params": missing,
                     "calc_type": calc_type.value if calc_type else None,
                     "params": params,
+                    "category": calc_type.value if calc_type else normalized_category,
                 }
                 if needs_calc_type:
                     compute_payload["needs_calc_type"] = True
@@ -396,6 +405,7 @@ def _get_compute() -> ComputeRunner:
                     "missing_params": missing,
                     "calc_type": calc_type.value,
                     "params": params,
+                    "category": calc_type.value,
                 }
             result = compute_service.calculate(calc_type=calc_type, params=params)
             return {
@@ -403,6 +413,7 @@ def _get_compute() -> ComputeRunner:
                 "result": result,
                 "calc_type": calc_type.value,
                 "params": params,
+                "category": calc_type.value,
             }
 
     return _ComputeAdapter()
@@ -914,6 +925,12 @@ def _build_compute_answer_message(
                     f"{high_rate}이면 약 {high_payment}입니다."
                 )
 
+    if calc_type is CalcType.PREPAYMENT_FEE:
+        fee_amount = _to_numeric(result.get("fee_amount"))
+        if fee_amount is None:
+            return "계산 결과를 생성했습니다."
+        return f"예상 중도상환수수료는 약 {_format_currency(fee_amount)}입니다."
+
     return "계산 결과를 생성했습니다."
 
 
@@ -940,6 +957,9 @@ def _normalize_calc_params(params: dict[str, Any], *, message: str | None = None
 
         _copy_if_missing("loan_amount", "principal")
         _copy_if_missing("principal", "loan_amount")
+        _copy_if_missing("remaining_principal", "principal")
+        _copy_if_missing("outstanding_principal", "principal")
+        _copy_if_missing("principal", "remaining_principal")
         _copy_if_missing("term_months", "months")
         _copy_if_missing("months", "term_months")
         _copy_if_missing("rate", "interest_rate")
@@ -957,6 +977,9 @@ def _normalize_calc_params(params: dict[str, Any], *, message: str | None = None
         if key in normalized:
             normalized[key] = _coerce_int(normalized[key])
     for key in ("interest_rate", "rate"):
+        if key in normalized:
+            normalized[key] = _coerce_float(normalized[key])
+    for key in ("fee_rate",):
         if key in normalized:
             normalized[key] = _coerce_float(normalized[key])
 
@@ -1311,6 +1334,25 @@ def _summarize_compute_result(
             "highlights": highlights or None,
         }
 
+    if calc_type is CalcType.PREPAYMENT_FEE:
+        fee_amount = _to_numeric(result.get("fee_amount"))
+        if fee_amount is None:
+            return None
+        principal = _to_numeric(result.get("principal"))
+        fee_rate = _to_numeric(result.get("fee_rate"))
+        text = f"예상 중도상환수수료는 약 {_format_currency(fee_amount)}입니다."
+        highlights = []
+        if principal is not None:
+            highlights.append({"label": "대출 잔액", "value": _format_currency(principal)})
+        if fee_rate is not None:
+            highlights.append({"label": "수수료율", "value": _format_rate(fee_rate)})
+        return {
+            "text": text,
+            "value": int(round(fee_amount)),
+            "unit": "krw",
+            "highlights": highlights or None,
+        }
+
     return None
 
 
@@ -1633,6 +1675,8 @@ def _infer_calc_category(
         _has_values(combined, "loan_amount") or _has_values(combined, "principal")
     ):
         return "ltv"
+    if _has_values(combined, "principal") and _has_values(combined, "fee_rate"):
+        return "prepayment_fee"
     if _has_values(combined, "annual_income", "annual_debt_service"):
         return "dsr"
     if _has_values(combined, "annual_income", "total_debt_payment"):
@@ -1664,15 +1708,24 @@ def _infer_calc_category(
         "대출 한도",
         "한도 계산",
         "상환 계산",
+        "원리금균등",
     )
     sensitivity_keywords = ("민감도", "금리 변화", "payment sensitivity", "금리 민감도")
+    dsr_triggers = ("한도", "얼마까지 빌리", "얼마까지 빌릴", "얼마까지 빌려")
 
+    if any(keyword in message for keyword in ("중도상환", "수수료")):
+        return "prepayment_fee"
+    if (
+        (any(keyword in message for keyword in ("집값", "시세", "담보")) and any(keyword in message for keyword in ("대출", "융자")))
+        or "ltv" in message
+    ):
+        return "ltv"
+    if any(keyword in message for keyword in dsr_triggers) or any(keyword in message for keyword in dsr_keywords):
+        return "dsr"
     if any(keyword in message for keyword in ltv_keywords):
         return "ltv"
     if any(keyword in message for keyword in dti_keywords):
         return "dti"
-    if any(keyword in message for keyword in dsr_keywords):
-        return "dsr"
     if any(keyword in message for keyword in sensitivity_keywords):
         return "payment_sensitivity"
     if any(keyword in message for keyword in monthly_keywords):

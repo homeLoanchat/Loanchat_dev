@@ -35,9 +35,10 @@ def test_prepayment_fee_percentage_not_treated_as_amount() -> None:
     message = "중도상환수수료 1.2%가 남은 대출잔액 1억 5천만 원에 적용되면 수수료는 얼마야?"
     slots = extract_intent_and_slots(message)["slots"]
 
-    assert slots["interest_rate"] == 1.2
-    assert slots["interest_rate_unit"] == "percent"
-    assert slots["loan_amount"] == 100_000_000
+    assert slots["fee_rate"] == 1.2
+    assert slots["fee_rate_unit"] == "percent"
+    assert slots["principal"] == 150_000_000
+    assert slots["loan_amount"] == 150_000_000
 
 
 def test_dsr_question_extracts_income_debt_and_target() -> None:
@@ -48,3 +49,10 @@ def test_dsr_question_extracts_income_debt_and_target() -> None:
     assert slots["monthly_debt_payment"] == 800_000
     assert slots["annual_debt_service"] == 9_600_000
     assert slots["target_dsr"] == 40.0
+
+
+def test_compound_korean_amount_parsed_correctly() -> None:
+    message = "집값 1억5천만 원"
+    slots = extract_intent_and_slots(message)["slots"]
+
+    assert slots["collateral_value"] == 150_000_000

@@ -32,3 +32,19 @@ def test_amortization_uses_percentage_rate() -> None:
     assert result["interest_rate"] == 4.2
     assert result["interest_rate_unit"] == "annual_pct"
     assert result["interest_rate_display"] == "4.20%"
+
+
+def test_prepayment_fee_calculation() -> None:
+    service = ComputeService()
+
+    result = service.calculate(
+        calc_type=CalcType.PREPAYMENT_FEE,
+        params={
+            "principal": 150_000_000,
+            "fee_rate": 1.2,
+        },
+    )
+
+    assert math.isclose(result["fee_amount"], 1_800_000.0, rel_tol=1e-9)
+    assert result["principal"] == 150_000_000.0
+    assert result["fee_rate"] == 1.2

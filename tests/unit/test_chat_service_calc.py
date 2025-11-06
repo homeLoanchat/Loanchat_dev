@@ -87,6 +87,38 @@ def test_chat_service_normalizes_aliases_for_ltv(chat_service: ChatService) -> N
     assert data.get("primary_value") == pytest.approx(60.0, rel=1e-4)
 
 
+def test_chat_service_infers_ltv_category_from_message(chat_service: ChatService) -> None:
+    request = ChatRequest(message="집값 6억, 대출 3억이면 LTV 얼마야?")
+
+    response = chat_service.handle(request)
+
+    assert response.category == "ltv"
+    data = response.data
+    assert data["category"] == "ltv"
+    assert _as_int(data["params"]["collateral_value"]) == 600_000_000
+    assert _as_int(data["params"]["loan_amount"]) == 300_000_000
+    assert "summary" in data and "LTV" in data["summary"]
+
+
+def test_chat_service_handles_prepayment_fee(chat_service: ChatService) -> None:
+    request = ChatRequest(
+        message="중도상환수수료 1.2%가 남은 대출잔액 1억5천만 원에 적용되면 수수료는 얼마야?"
+    )
+
+    response = chat_service.handle(request)
+
+    assert response.category == "prepayment_fee"
+    data = response.data
+    assert data["category"] == "prepayment_fee"
+    assert data["calc_type"] == CalcType.PREPAYMENT_FEE.value
+    assert _as_int(data["params"]["principal"]) == 150_000_000
+    assert data["params"]["fee_rate"] == pytest.approx(1.2)
+    assert data["result"]["fee_amount"] == pytest.approx(1_800_000.0, rel=1e-9)
+    assert "summary" in data and "중도상환수수료" in data["summary"]
+    assert data.get("primary_value") == 1_800_000
+    assert data.get("primary_value_unit") == "krw"
+
+
 def test_chat_service_derives_collateral_from_additional(chat_service: ChatService) -> None:
     request = ChatRequest(
         message="담보가치 5억에 3억 대출이면 LTV 얼마야?",

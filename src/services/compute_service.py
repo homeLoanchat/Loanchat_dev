@@ -29,6 +29,7 @@ class ComputeService:
             CalcType.DSR: self._handle_dsr,
             CalcType.AMORTIZATION: self._handle_amortization,
             CalcType.PAYMENT_SENSITIVITY: self._handle_payment_sensitivity,
+            CalcType.PREPAYMENT_FEE: self._handle_prepayment_fee,
         }
 
     def calculate(self, *, calc_type: CalcType, params: dict[str, Any]) -> dict[str, Any]:
@@ -152,6 +153,18 @@ class ComputeService:
             "interest_rate_unit": rate_unit,
             "months": months,
             "sensitivity": sensitivity,
+        }
+
+    def _handle_prepayment_fee(self, params: dict[str, Any]) -> dict[str, Any]:
+        principal_key = "principal" if "principal" in params else "loan_amount"
+        principal = self._require_decimal(params, principal_key)
+        fee_rate = self._require_decimal(params, "fee_rate", allow_zero=False)
+        fee_amount = (principal * fee_rate / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return {
+            "principal": float(principal),
+            "fee_rate": float(fee_rate),
+            "fee_rate_unit": "percent",
+            "fee_amount": float(fee_amount),
         }
 
     # Helpers ------------------------------------------------------------------

@@ -35,6 +35,13 @@ def test_infers_ltv_when_message_mentions_ltv() -> None:
 
     assert normalized["collateral_value"] == 600_000_000
     assert normalized["loan_amount"] == 300_000_000
+    resolution = IntentResolution(intent=None, source="test", slots=params, confidence={})
+    category = _infer_calc_category(
+        ChatRequest(message="집값 6억, 대출 3억이면 LTV 얼마야?"),
+        resolution,
+        normalized,
+    )
+    assert category == "ltv"
 
 
 def test_monthly_debt_payment_converts_to_annual_and_prefers_dsr() -> None:
@@ -60,15 +67,14 @@ def test_monthly_debt_payment_converts_to_annual_and_prefers_dsr() -> None:
 def test_ltv_inference_not_triggered_for_prepayment_question() -> None:
     message = "중도상환수수료 1.2%가 남은 대출잔액 1억 5천만 원에 적용되면 수수료는 얼마야?"
     slots = {
-        "interest_rate": 1.2,
-        "interest_rate_unit": "percent",
-        "loan_amount": 100_000_000,
-        "additional_amounts": [5_000_000],
+        "fee_rate": 1.2,
+        "fee_rate_unit": "percent",
+        "loan_amount": 150_000_000,
     }
 
     normalized = _normalize_calc_params(dict(slots), message=message)
 
-    assert "collateral_value" not in normalized
+    assert normalized["principal"] == 150_000_000
     resolution = IntentResolution(intent=None, source="test", slots=slots, confidence={})
     category = _infer_calc_category(ChatRequest(message=message), resolution, normalized)
-    assert category != "ltv"
+    assert category == "prepayment_fee"
