@@ -38,6 +38,8 @@ CALC_CATEGORY_MAP: dict[str, CalcType] = {
     "dsr": CalcType.DSR,
     "amortization": CalcType.AMORTIZATION,
     "payment_sensitivity": CalcType.PAYMENT_SENSITIVITY,
+    "prepayment_fee": CalcType.PREPAYMENT_FEE,
+    "prepayment": CalcType.PREPAYMENT_FEE,
 }
 
 CALCULATIONAL_CATEGORIES = set(CALC_CATEGORY_MAP.keys())
@@ -48,6 +50,7 @@ CALC_REQUIRED_PARAMS: dict[CalcType, list[str]] = {
     CalcType.DSR: ["annual_income", "annual_debt_service"],
     CalcType.AMORTIZATION: ["principal", "interest_rate", "months"],
     CalcType.PAYMENT_SENSITIVITY: ["principal", "interest_rates", "months"],
+    CalcType.PREPAYMENT_FEE: ["principal", "fee_rate"],
 }
 
 CALC_PARAM_LABELS: dict[str, str] = {
@@ -58,9 +61,12 @@ CALC_PARAM_LABELS: dict[str, str] = {
     "total_debt_payment": "총 부채 상환액",
     "annual_debt_service": "연간 부채 상환액",
     "principal": "대출 원금",
+    "principal_remaining": "대출 잔액",
+    "principal_outstanding": "대출 잔액",
     "interest_rate": "연 이자율(%)",
     "interest_rates": "이자율 목록",
     "months": "상환 개월 수",
+    "fee_rate": "중도상환 수수료율(%)",
 }
 
 CALC_CATEGORY_DISPLAY_LABELS: dict[str, str] = {
@@ -70,6 +76,7 @@ CALC_CATEGORY_DISPLAY_LABELS: dict[str, str] = {
     "amortization": "월 상환금액 (원리금 균등)",
     "monthly_payment": "월 상환금액 (원리금 균등)",
     "payment_sensitivity": "금리 민감도 분석",
+    "prepayment_fee": "중도상환 수수료",
 }
 
 RETRIEVAL_VALIDATION_FALLBACK_MESSAGE = (
@@ -251,6 +258,7 @@ class ChatService:
             calc_type: CalcType | None = None
             if normalized_category:
                 calc_type = CALC_CATEGORY_MAP.get(normalized_category)
+                params.setdefault("category", normalized_category)
             response_category = normalized_category or request.category
 
             missing: list[str] = []
@@ -275,6 +283,7 @@ class ChatService:
                     "missing_params": missing,
                     "calc_type": calc_type.value if calc_type else None,
                     "params": params,
+                    "category": calc_type.value if calc_type else normalized_category,
                 }
                 if needs_calc_type:
                     compute_payload["needs_calc_type"] = True
@@ -337,7 +346,11 @@ class ChatService:
             return build_chat_response(
                 intent=intent,
                 category=response_category,
-                data=compute_payload,
+                data=_normalize_calculational_payload(
+                    compute_payload,
+                    calc_type=calc_type,
+                    category=response_category,
+                ),
                 message=message,
                 generated_at=generated_at,
                 mock=getattr(self._compute, "is_mock", False),
@@ -396,6 +409,7 @@ def _get_compute() -> ComputeRunner:
                     "missing_params": missing,
                     "calc_type": calc_type.value,
                     "params": params,
+                    "category": calc_type.value,
                 }
             result = compute_service.calculate(calc_type=calc_type, params=params)
             return {
@@ -403,6 +417,7 @@ def _get_compute() -> ComputeRunner:
                 "result": result,
                 "calc_type": calc_type.value,
                 "params": params,
+                "category": calc_type.value,
             }
 
     return _ComputeAdapter()
@@ -506,7 +521,7 @@ def _prepare_calc_params(request: ChatRequest, resolution: IntentResolution) -> 
     if resolution.slots:
         for key, value in resolution.slots.items():
             params.setdefault(key, value)
-    return _normalize_calc_params(params)
+    return _normalize_calc_params(params, message=request.message)
 
 
 def _attach_intent_metadata(
@@ -914,6 +929,12 @@ def _build_compute_answer_message(
                     f"{high_rate}이면 약 {high_payment}입니다."
                 )
 
+    if calc_type is CalcType.PREPAYMENT_FEE:
+        fee_amount = _to_numeric(result.get("fee_amount"))
+        if fee_amount is None:
+            return "계산 결과를 생성했습니다."
+        return f"예상 중도상환수수료는 약 {_format_currency(fee_amount)}입니다."
+
     return "계산 결과를 생성했습니다."
 
 
@@ -921,7 +942,44 @@ def _humanize_param_name(name: str) -> str:
     return CALC_PARAM_LABELS.get(name, name)
 
 
-def _normalize_calc_params(params: dict[str, Any]) -> dict[str, Any]:
+def _normalize_calculational_payload(
+    payload: dict[str, Any],
+    *,
+    calc_type: CalcType | None,
+    category: str | None,
+) -> dict[str, Any]:
+    normalized = dict(payload or {})
+
+    needs_input_value = normalized.get("needs_input")
+    normalized["needs_input"] = bool(needs_input_value)
+    normalized["need_inputs"] = normalized["needs_input"]
+
+    followups = normalized.get("followups")
+    if isinstance(followups, list):
+        normalized["followups"] = list(followups)
+    else:
+        normalized["followups"] = []
+
+    missing = normalized.get("missing_params")
+    if normalized["needs_input"]:
+        if not isinstance(missing, list):
+            normalized["missing_params"] = list(missing) if isinstance(missing, (list, tuple)) else []
+    else:
+        normalized["missing_params"] = []
+
+    if calc_type is not None:
+        normalized.setdefault("calc_type", calc_type.value)
+        normalized.setdefault("type", calc_type.value)
+    else:
+        normalized.setdefault("type", "calc")
+
+    if category:
+        normalized.setdefault("category", category)
+
+    return normalized
+
+
+def _normalize_calc_params(params: dict[str, Any], *, message: str | None = None) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for key, value in params.items():
         if isinstance(value, str):
@@ -940,6 +998,9 @@ def _normalize_calc_params(params: dict[str, Any]) -> dict[str, Any]:
 
         _copy_if_missing("loan_amount", "principal")
         _copy_if_missing("principal", "loan_amount")
+        _copy_if_missing("remaining_principal", "principal")
+        _copy_if_missing("outstanding_principal", "principal")
+        _copy_if_missing("principal", "remaining_principal")
         _copy_if_missing("term_months", "months")
         _copy_if_missing("months", "term_months")
         _copy_if_missing("rate", "interest_rate")
@@ -948,6 +1009,8 @@ def _normalize_calc_params(params: dict[str, Any]) -> dict[str, Any]:
         _copy_if_missing("collateral_value", "property_value")
         _copy_if_missing("existing_debt_payment", "total_debt_payment")
         _copy_if_missing("total_debt_payment", "existing_debt_payment")
+        _copy_if_missing("annual_debt_service", "total_debt_payment")
+        _copy_if_missing("total_debt_payment", "annual_debt_service")
 
     _apply_aliases()
 
@@ -957,18 +1020,30 @@ def _normalize_calc_params(params: dict[str, Any]) -> dict[str, Any]:
     for key in ("interest_rate", "rate"):
         if key in normalized:
             normalized[key] = _coerce_float(normalized[key])
+    for key in ("fee_rate",):
+        if key in normalized:
+            normalized[key] = _coerce_float(normalized[key])
 
     _apply_aliases()
 
-    _fill_collateral_and_loan_amounts(normalized)
+    monthly_debt = _to_numeric(normalized.get("monthly_debt_payment"))
+    if monthly_debt is not None and _is_empty_value(normalized.get("annual_debt_service")):
+        normalized["annual_debt_service"] = int(round(monthly_debt * 12))
+
+    _apply_aliases()
+
+    _fill_collateral_and_loan_amounts(normalized, message=message)
 
     _apply_aliases()
 
     return normalized
 
 
-def _fill_collateral_and_loan_amounts(params: dict[str, Any]) -> None:
+def _fill_collateral_and_loan_amounts(params: dict[str, Any], *, message: str | None = None) -> None:
     """추출된 수치 정보를 활용해 담보 가치/대출 금액을 보완한다."""
+
+    if not _has_ltv_context(params, message=message):
+        return
 
     additional = params.get("additional_amounts")
     if not isinstance(additional, (list, tuple)) or not additional:
@@ -1026,6 +1101,56 @@ def _fill_collateral_and_loan_amounts(params: dict[str, Any]) -> None:
             params["loan_amount"] = int(round(loan_numeric))
         else:
             params["loan_amount"] = loan_value
+
+
+def _has_ltv_context(params: dict[str, Any], *, message: str | None) -> bool:
+    hints = {
+        str(params.get("calc_type")),
+        str(params.get("category")),
+    }
+    if any(
+        isinstance(token, str)
+        and token.strip().lower() in {"ltv", "loan_to_value"}
+        for token in hints
+    ):
+        return True
+
+    text = (message or "").lower()
+    if not text:
+        return False
+
+    disallow_keywords = (
+        "연소득",
+        "소득",
+        "연봉",
+        "부채",
+        "월 상환",
+        "월상환",
+        "dsr",
+        "dti",
+        "한도",
+        "중도상환",
+        "수수료",
+    )
+    if any(keyword in text for keyword in disallow_keywords):
+        return False
+
+    keywords = (
+        "ltv",
+        "담보",
+        "담보비율",
+        "담보 비율",
+        "담보인정",
+        "담보 인정",
+        "집값",
+        "주택가격",
+        "주택 가격",
+        "주택가액",
+        "매매가",
+        "시세",
+        "아파트값",
+    )
+    return any(keyword in text for keyword in keywords)
 
 
 def _summarize_compute_result(
@@ -1246,6 +1371,25 @@ def _summarize_compute_result(
         return {
             "text": text,
             "value": int(round(best_payment)),
+            "unit": "krw",
+            "highlights": highlights or None,
+        }
+
+    if calc_type is CalcType.PREPAYMENT_FEE:
+        fee_amount = _to_numeric(result.get("fee_amount"))
+        if fee_amount is None:
+            return None
+        principal = _to_numeric(result.get("principal"))
+        fee_rate = _to_numeric(result.get("fee_rate"))
+        text = f"예상 중도상환수수료는 약 {_format_currency(fee_amount)}입니다."
+        highlights = []
+        if principal is not None:
+            highlights.append({"label": "대출 잔액", "value": _format_currency(principal)})
+        if fee_rate is not None:
+            highlights.append({"label": "수수료율", "value": _format_rate(fee_rate)})
+        return {
+            "text": text,
+            "value": int(round(fee_amount)),
             "unit": "krw",
             "highlights": highlights or None,
         }
@@ -1572,10 +1716,12 @@ def _infer_calc_category(
         _has_values(combined, "loan_amount") or _has_values(combined, "principal")
     ):
         return "ltv"
-    if _has_values(combined, "annual_income", "total_debt_payment"):
-        return "dti"
+    if _has_values(combined, "principal") and _has_values(combined, "fee_rate"):
+        return "prepayment_fee"
     if _has_values(combined, "annual_income", "annual_debt_service"):
         return "dsr"
+    if _has_values(combined, "annual_income", "total_debt_payment"):
+        return "dti"
     if _has_values(combined, "principal") and _has_non_empty_sequence(combined.get("interest_rates")):
         return "payment_sensitivity"
     if _has_values(combined, "loan_amount") and _has_non_empty_sequence(combined.get("interest_rates")):
@@ -1603,15 +1749,24 @@ def _infer_calc_category(
         "대출 한도",
         "한도 계산",
         "상환 계산",
+        "원리금균등",
     )
     sensitivity_keywords = ("민감도", "금리 변화", "payment sensitivity", "금리 민감도")
+    dsr_triggers = ("한도", "얼마까지 빌리", "얼마까지 빌릴", "얼마까지 빌려")
 
+    if any(keyword in message for keyword in ("중도상환", "수수료")):
+        return "prepayment_fee"
+    if (
+        (any(keyword in message for keyword in ("집값", "시세", "담보")) and any(keyword in message for keyword in ("대출", "융자")))
+        or "ltv" in message
+    ):
+        return "ltv"
+    if any(keyword in message for keyword in dsr_triggers) or any(keyword in message for keyword in dsr_keywords):
+        return "dsr"
     if any(keyword in message for keyword in ltv_keywords):
         return "ltv"
     if any(keyword in message for keyword in dti_keywords):
         return "dti"
-    if any(keyword in message for keyword in dsr_keywords):
-        return "dsr"
     if any(keyword in message for keyword in sensitivity_keywords):
         return "payment_sensitivity"
     if any(keyword in message for keyword in monthly_keywords):
@@ -1627,11 +1782,17 @@ def _has_non_empty_sequence(value: Any) -> bool:
 
 def _coerce_int(value: Any) -> Any:
     try:
+        if isinstance(value, bool):
+            return int(value)
         if isinstance(value, str):
             cleaned = value.replace(",", "").strip()
             if cleaned.endswith("개월"):
                 cleaned = cleaned[: -len("개월")].strip()
             return int(cleaned)
+        if isinstance(value, float):
+            if value.is_integer():
+                return int(value)
+            return value
         return int(value)
     except (TypeError, ValueError):
         return value
@@ -1650,12 +1811,12 @@ def _coerce_float(value: Any) -> Any:
 def _to_numeric(value: Any) -> float | None:
     """값을 float로 변환할 수 있으면 반환하고, 불가하면 None을 돌려준다."""
 
-    coerced_int = _coerce_int(value)
-    if isinstance(coerced_int, int):
-        return float(coerced_int)
     coerced_float = _coerce_float(value)
     if isinstance(coerced_float, float):
         return coerced_float
+    coerced_int = _coerce_int(value)
+    if isinstance(coerced_int, int):
+        return float(coerced_int)
     return None
 
 

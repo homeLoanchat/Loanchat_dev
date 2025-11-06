@@ -29,6 +29,7 @@ class ComputeService:
             CalcType.DSR: self._handle_dsr,
             CalcType.AMORTIZATION: self._handle_amortization,
             CalcType.PAYMENT_SENSITIVITY: self._handle_payment_sensitivity,
+            CalcType.PREPAYMENT_FEE: self._handle_prepayment_fee,
         }
 
     def calculate(self, *, calc_type: CalcType, params: dict[str, Any]) -> dict[str, Any]:
@@ -90,19 +91,42 @@ class ComputeService:
         }
 
     def _handle_amortization(self, params: dict[str, Any]) -> dict[str, Any]:
-        principal = self._require_decimal(params, "principal")
+        principal_key = "principal" if "principal" in params else "loan_amount"
+        principal = self._require_decimal(params, principal_key)
+
         interest_rate = self._require_decimal(params, "interest_rate", allow_zero=True)
-        months = self._require_int(params, "months", min_value=1)
+        annual_rate = float(interest_rate)
+        monthly_rate = (annual_rate / 100.0) / 12.0
+
+        months_value: Any = params.get("months")
+        if months_value is None:
+            if "term_months" in params:
+                months_value = params["term_months"]
+            elif "years" in params:
+                months_value = Decimal(str(params["years"])) * 12
+            elif "term_years" in params:
+                months_value = Decimal(str(params["term_years"])) * 12
+
+        if isinstance(months_value, Decimal):
+            months_value = int(months_value)
+
+        if months_value is None:
+            raise InvalidValueError("months 파라미터가 필요합니다.", field="months")
+
+        months = self._require_int({"months": months_value}, "months", min_value=1)
         schedule = calculate_amortization_schedule(
             principal=float(principal),
-            interest_rate=float(interest_rate),
+            interest_rate=monthly_rate * 12,
             months=months,
             as_dataframe=False,
         )
         monthly_payment = schedule[0]["payment"] if schedule else 0.0
         return {
             "principal": float(principal),
+            "loan_amount": float(principal),
             "interest_rate": float(interest_rate),
+            "interest_rate_unit": "annual_pct",
+            "interest_rate_display": f"{annual_rate:.2f}%",
             "months": months,
             "schedule": schedule,
             "monthly_payment": monthly_payment,
@@ -112,17 +136,35 @@ class ComputeService:
         principal = self._require_decimal(params, "principal")
         rates = self._require_rate_list(params, "interest_rates")
         months = self._require_int(params, "months", min_value=1)
+        rate_unit = _normalize_rate_unit(
+            params.get("interest_rates_unit")
+            or params.get("interest_rate_unit")
+            or params.get("rate_unit")
+        )
         sensitivity = calculate_payment_sensitivity(
             principal=float(principal),
-            interest_rates=[float(rate) for rate in rates],
+            interest_rates=[_convert_rate_to_decimal(float(rate), rate_unit) for rate in rates],
             months=months,
             as_dataframe=False,
         )
         return {
             "principal": float(principal),
             "interest_rates": [float(rate) for rate in rates],
+            "interest_rate_unit": rate_unit,
             "months": months,
             "sensitivity": sensitivity,
+        }
+
+    def _handle_prepayment_fee(self, params: dict[str, Any]) -> dict[str, Any]:
+        principal_key = "principal" if "principal" in params else "loan_amount"
+        principal = self._require_decimal(params, principal_key)
+        fee_rate = self._require_decimal(params, "fee_rate", allow_zero=False)
+        fee_amount = (principal * fee_rate / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return {
+            "principal": float(principal),
+            "fee_rate": float(fee_rate),
+            "fee_rate_unit": "percent",
+            "fee_amount": float(fee_amount),
         }
 
     # Helpers ------------------------------------------------------------------
@@ -184,6 +226,25 @@ class ComputeService:
 @lru_cache(maxsize=1)
 def get_compute_service() -> ComputeService:
     return ComputeService()
+
+
+def _normalize_rate_unit(value: Any) -> str:
+    if not isinstance(value, str):
+        return "percent"
+    normalized = value.strip().lower()
+    if not normalized:
+        return "percent"
+    if normalized in {"percent", "percentage", "%"}:
+        return "percent"
+    if normalized in {"decimal", "ratio"}:
+        return "decimal"
+    return "percent"
+
+
+def _convert_rate_to_decimal(value: float, unit: str) -> float:
+    if unit == "decimal":
+        return value
+    return value / 100.0
 
 
 

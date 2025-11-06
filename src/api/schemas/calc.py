@@ -16,6 +16,7 @@ class CalcType(str, Enum):
     DSR = "dsr"
     AMORTIZATION = "amortization"
     PAYMENT_SENSITIVITY = "payment_sensitivity"
+    PREPAYMENT_FEE = "prepayment_fee"
 
 
 class CalcRequest(BaseModel):

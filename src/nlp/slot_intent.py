@@ -49,10 +49,110 @@ _INFO_KEYWORDS = {
 }
 _QUESTION_TOKENS = {"?", "어떻게", "왜", "언제", "어디", "무엇"}
 
-_AMOUNT_PATTERN = re.compile(r"(?P<num>\d[\d,\.]*)\s*(?P<unit>억|만|천|백)?\s*(?P<currency>원|만원|억원)?")
+_INCOME_KEYWORDS = ("연소득", "연 봉", "연봉", "연간소득", "소득")
+_DEBT_KEYWORDS = ("부채", "상환")
+_COLLATERAL_KEYWORDS = ("집값", "주택가격", "주택 가격", "담보", "시세", "매매가", "아파트값")
+_LOAN_KEYWORDS = ("대출", "대출금", "대출액", "원금", "잔금", "대출잔액", "잔액")
+_MONTH_KEYWORDS = ("월", "매월", "월별")
+_RATE_INTEREST_KEYWORDS = ("금리", "이자", "연이율", "연 이자율")
+_RATE_DSR_KEYWORDS = ("dsr", "디에스알")
+_RATE_DTI_KEYWORDS = ("dti", "디티아이")
+_RATE_LTV_KEYWORDS = ("ltv", "담보비율", "담보 비율", "담보인정", "담보 인정")
+_RATE_PREPAYMENT_KEYWORDS = ("중도상환", "수수료")
+
+
+def _iter_amount_spans(message: str) -> list[tuple[int, int, str]]:
+    spans: list[tuple[int, int, str]] = []
+    length = len(message)
+    index = 0
+    while index < length:
+        char = message[index]
+        if char.isdigit():
+            start = index
+            last_valid = index + 1
+            index += 1
+            while index < length:
+                current = message[index]
+                if current.isdigit() or current in {",", "."}:
+                    last_valid = index + 1
+                    index += 1
+                    continue
+                if current.isspace():
+                    index += 1
+                    continue
+                if current in _AMOUNT_UNIT_CHARS:
+                    last_valid = index + 1
+                    index += 1
+                    continue
+                break
+            if last_valid > start:
+                spans.append((start, last_valid, message[start:last_valid]))
+            index = last_valid
+        else:
+            index += 1
+    # remove duplicates
+    unique: dict[tuple[int, int], str] = {}
+    for start, end, token in spans:
+        unique.setdefault((start, end), token)
+    ordered = sorted(unique.items(), key=lambda item: item[0][0])
+    return [(start, end, token) for (start, end), token in ordered]
+
+
+def _parse_basic_number(fragment: str) -> float:
+    fragment = fragment.strip()
+    if not fragment:
+        return 1.0
+    try:
+        return float(fragment)
+    except ValueError:
+        pass
+    total = 0.0
+    remaining = fragment
+    for unit, multiplier in (("천", 1000.0), ("백", 100.0), ("십", 10.0)):
+        while unit in remaining:
+            idx = remaining.find(unit)
+            head = remaining[:idx]
+            number = float(head) if head else 1.0
+            total += number * multiplier
+            remaining = remaining[idx + len(unit) :]
+    if remaining:
+        try:
+            total += float(remaining)
+        except ValueError:
+            pass
+    return total
+
+
+def _normalize_amount_token(raw: str) -> Optional[int]:
+    cleaned = raw.replace(",", "").replace(" ", "").strip()
+    if cleaned.endswith("원"):
+        cleaned = cleaned[: -len("원")]
+    if not cleaned:
+        return None
+
+    total = 0.0
+    remaining = cleaned
+
+    for unit, multiplier in (("억", 100_000_000.0), ("만", 10_000.0)):
+        while unit in remaining:
+            idx = remaining.find(unit)
+            head = remaining[:idx]
+            part = _parse_basic_number(head)
+            total += part * multiplier
+            remaining = remaining[idx + len(unit) :]
+
+    if remaining:
+        total += _parse_basic_number(remaining)
+
+    if total <= 0:
+        return None
+    return int(round(total))
+
 _RATE_PATTERN = re.compile(r"(?P<rate>\d+(?:\.\d+)?)\s*%")
 _TERM_YEAR_PATTERN = re.compile(r"(?P<years>\d+)\s*년")
 _TERM_MONTH_PATTERN = re.compile(r"(?P<months>\d+)\s*개월?")
+
+_AMOUNT_UNIT_CHARS = {"억", "만", "천", "백", "십", "원"}
 
 
 class LLMClient(Protocol):
@@ -140,68 +240,159 @@ def _rule_based_analysis(message: str) -> RuleAnalysis:
 def _extract_slots(message: str) -> Dict[str, Any]:
     slots: Dict[str, Any] = {}
 
-    for match in _AMOUNT_PATTERN.finditer(message):
-        raw = match.group("num")
-        unit = match.group("unit")
-        currency = match.group("currency")
-        if not raw:
-            continue
-        try:
-            normalized = _normalize_amount(raw, unit, currency)
-        except ValueError:
-            continue
-        if not normalized:
-            continue
-        if "loan_amount" not in slots:
-            slots["loan_amount"] = normalized
-        else:
-            slots.setdefault("additional_amounts", []).append(normalized)
-        if currency and "currency" not in slots:
-            slots["currency"] = currency
+    def _context_before(span: tuple[int, int], window: int = 12) -> str:
+        start = max(0, span[0] - window)
+        return message[start:span[0]].lower()
 
-    rate_match = _RATE_PATTERN.search(message)
-    if rate_match:
+    def _context_after(span: tuple[int, int], window: int = 12) -> str:
+        end = min(len(message), span[1] + window)
+        return message[span[1]:end].lower()
+
+    def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+        return any(keyword in text for keyword in keywords)
+
+    rate_matches = list(_RATE_PATTERN.finditer(message))
+    rate_spans: list[tuple[int, int]] = []
+    interest_assigned = False
+
+    for match in rate_matches:
+        span = match.span()
+        rate_spans.append(span)
         try:
-            slots["interest_rate"] = float(rate_match.group("rate"))
+            value = float(match.group("rate"))
         except (TypeError, ValueError):
-            pass
+            continue
+        before = _context_before(span)
+        after = _context_after(span)
+        if _contains_any(before, _RATE_DSR_KEYWORDS):
+            slots.setdefault("target_dsr", value)
+            slots.setdefault("target_dsr_unit", "percent")
+            continue
+        if _contains_any(before, _RATE_DTI_KEYWORDS):
+            slots.setdefault("target_dti", value)
+            slots.setdefault("target_dti_unit", "percent")
+            continue
+        if _contains_any(before, _RATE_LTV_KEYWORDS):
+            slots.setdefault("target_ltv", value)
+            slots.setdefault("target_ltv_unit", "percent")
+            continue
+        if _contains_any(before, _RATE_PREPAYMENT_KEYWORDS) or _contains_any(after, _RATE_PREPAYMENT_KEYWORDS):
+            slots.setdefault("fee_rate", value)
+            slots.setdefault("fee_rate_unit", "percent")
+            continue
+        if not interest_assigned and (_contains_any(before, _RATE_INTEREST_KEYWORDS) or _contains_any(after, _RATE_INTEREST_KEYWORDS)):
+            slots["interest_rate"] = value
+            slots.setdefault("interest_rate_unit", "percent")
+            interest_assigned = True
+            continue
+        if not interest_assigned:
+            slots["interest_rate"] = value
+            slots.setdefault("interest_rate_unit", "percent")
+            interest_assigned = True
+        else:
+            slots.setdefault("additional_rates", []).append(value)
 
-    years_match = _TERM_YEAR_PATTERN.search(message)
-    months_match = _TERM_MONTH_PATTERN.search(message)
-    term_months: Optional[int] = None
-    if years_match:
-        term_months = int(years_match.group("years")) * 12
-    if months_match:
-        term_months = (term_months or 0) + int(months_match.group("months"))
+    year_matches = list(_TERM_YEAR_PATTERN.finditer(message))
+    month_matches = list(_TERM_MONTH_PATTERN.finditer(message))
+    term_spans = [match.span() for match in year_matches]
+    term_spans.extend(match.span() for match in month_matches)
+
+    term_months = 0
+    for match in year_matches:
+        try:
+            term_months += int(match.group("years")) * 12
+        except (TypeError, ValueError):
+            continue
+    for match in month_matches:
+        try:
+            term_months += int(match.group("months"))
+        except (TypeError, ValueError):
+            continue
     if term_months:
         slots["term_months"] = term_months
 
+    skip_spans_set = {span for span in rate_spans + term_spans}
+    skip_spans = sorted(skip_spans_set)
+
+    def _overlaps(target: tuple[int, int], span: tuple[int, int]) -> bool:
+        return target[0] < span[1] and span[0] < target[1]
+
+    for start, end, token in _iter_amount_spans(message):
+        span = (start, end)
+        if any(_overlaps(span, other) for other in skip_spans):
+            continue
+        normalized = _normalize_amount_token(token)
+        if normalized is None:
+            continue
+        context = (message[max(0, span[0] - 12): min(len(message), span[1] + 12)]).lower()
+        before_word = message[max(0, span[0] - 12): span[0]].strip().lower().split()
+        after_word = message[span[1] : min(len(message), span[1] + 12)].strip().lower().split()
+        prev_token = before_word[-1] if before_word else ""
+        next_token = after_word[0] if after_word else ""
+        assigned = False
+
+        loan_hit = (
+            _contains_any(context, _LOAN_KEYWORDS)
+            or prev_token in _LOAN_KEYWORDS
+            or next_token in _LOAN_KEYWORDS
+        )
+        collateral_hit = (
+            _contains_any(context, _COLLATERAL_KEYWORDS)
+            or prev_token in _COLLATERAL_KEYWORDS
+            or next_token in _COLLATERAL_KEYWORDS
+        )
+
+        if _contains_any(context, _INCOME_KEYWORDS):
+            slots.setdefault("annual_income", normalized)
+            assigned = True
+        elif _contains_any(context, _DEBT_KEYWORDS):
+            if _contains_any(context, _MONTH_KEYWORDS):
+                slots.setdefault("monthly_debt_payment", normalized)
+                slots.setdefault("annual_debt_service", normalized * 12)
+            else:
+                slots.setdefault("annual_debt_service", normalized)
+            assigned = True
+        elif "잔액" in context:
+            slots.setdefault("principal", normalized)
+            slots.setdefault("loan_amount", normalized)
+            assigned = True
+
+        if not assigned:
+            if loan_hit and not collateral_hit:
+                slots.setdefault("loan_amount", normalized)
+                slots.setdefault("principal", normalized)
+                assigned = True
+            elif collateral_hit and not loan_hit:
+                if "collateral_value" not in slots:
+                    slots["collateral_value"] = normalized
+                else:
+                    slots.setdefault("additional_amounts", []).append(normalized)
+                assigned = True
+            elif loan_hit and collateral_hit:
+                if prev_token in _COLLATERAL_KEYWORDS:
+                    if "collateral_value" not in slots:
+                        slots["collateral_value"] = normalized
+                    else:
+                        slots.setdefault("additional_amounts", []).append(normalized)
+                elif prev_token in _LOAN_KEYWORDS or next_token in _LOAN_KEYWORDS:
+                    slots.setdefault("loan_amount", normalized)
+                    slots.setdefault("principal", normalized)
+                else:
+                    if "collateral_value" not in slots:
+                        slots["collateral_value"] = normalized
+                    else:
+                        slots.setdefault("additional_amounts", []).append(normalized)
+                assigned = True
+
+        if not assigned:
+            if "loan_amount" not in slots:
+                slots.setdefault("loan_amount", normalized)
+            else:
+                slots.setdefault("additional_amounts", []).append(normalized)
+    if "additional_amounts" in slots:
+        slots["additional_amounts"] = sorted({int(value) for value in slots["additional_amounts"]}, reverse=True)
+
     return slots
-
-
-def _normalize_amount(raw: str, unit: Optional[str], currency: Optional[str] = None) -> Optional[int]:
-    cleaned = raw.replace(",", "")
-    try:
-        value = float(cleaned)
-    except ValueError as exc:  # noqa: BLE001
-        raise ValueError from exc
-
-    multiplier = 1.0
-    if unit == "억":
-        multiplier = 100_000_000.0
-    elif unit == "만":
-        multiplier = 10_000.0
-    elif unit == "천":
-        multiplier = 1_000.0
-    elif unit == "백":
-        multiplier = 100.0
-    elif not unit and currency in {"만원"}:
-        multiplier = 10_000.0
-    elif not unit and currency in {"억원"}:
-        multiplier = 100_000_000.0
-
-    normalized = int(value * multiplier)
-    return normalized if normalized > 0 else None
 
 
 def _call_llm_router(message: str, rule: RuleAnalysis) -> Optional[dict[str, Any]]:
