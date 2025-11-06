@@ -49,6 +49,16 @@ _INFO_KEYWORDS = {
 }
 _QUESTION_TOKENS = {"?", "어떻게", "왜", "언제", "어디", "무엇"}
 
+_INCOME_KEYWORDS = ("연소득", "연 봉", "연봉", "연간소득", "소득")
+_DEBT_KEYWORDS = ("부채", "상환")
+_COLLATERAL_KEYWORDS = ("집값", "주택가격", "주택 가격", "담보", "시세", "매매가", "아파트값")
+_LOAN_KEYWORDS = ("대출", "대출금", "대출액", "원금", "잔금", "대출잔액", "잔액")
+_MONTH_KEYWORDS = ("월", "매월", "월별")
+_RATE_INTEREST_KEYWORDS = ("금리", "이자", "연이율", "연 이자율")
+_RATE_DSR_KEYWORDS = ("dsr", "디에스알")
+_RATE_DTI_KEYWORDS = ("dti", "디티아이")
+_RATE_LTV_KEYWORDS = ("ltv", "담보비율", "담보 비율", "담보인정", "담보 인정")
+
 _AMOUNT_PATTERN = re.compile(r"(?P<num>\d[\d,\.]*)\s*(?P<unit>억|만|천|백)?\s*(?P<currency>원|만원|억원)?")
 _RATE_PATTERN = re.compile(r"(?P<rate>\d+(?:\.\d+)?)\s*%")
 _TERM_YEAR_PATTERN = re.compile(r"(?P<years>\d+)\s*년")
@@ -140,7 +150,82 @@ def _rule_based_analysis(message: str) -> RuleAnalysis:
 def _extract_slots(message: str) -> Dict[str, Any]:
     slots: Dict[str, Any] = {}
 
+    def _context_before(span: tuple[int, int], window: int = 12) -> str:
+        start = max(0, span[0] - window)
+        return message[start:span[0]].lower()
+
+    def _context_after(span: tuple[int, int], window: int = 12) -> str:
+        end = min(len(message), span[1] + window)
+        return message[span[1]:end].lower()
+
+    def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+        return any(keyword in text for keyword in keywords)
+
+    rate_matches = list(_RATE_PATTERN.finditer(message))
+    rate_spans: list[tuple[int, int]] = []
+    interest_assigned = False
+
+    for match in rate_matches:
+        span = match.span()
+        rate_spans.append(span)
+        try:
+            value = float(match.group("rate"))
+        except (TypeError, ValueError):
+            continue
+        before = _context_before(span)
+        after = _context_after(span)
+        if _contains_any(before, _RATE_DSR_KEYWORDS):
+            slots.setdefault("target_dsr", value)
+            slots.setdefault("target_dsr_unit", "percent")
+            continue
+        if _contains_any(before, _RATE_DTI_KEYWORDS):
+            slots.setdefault("target_dti", value)
+            slots.setdefault("target_dti_unit", "percent")
+            continue
+        if _contains_any(before, _RATE_LTV_KEYWORDS):
+            slots.setdefault("target_ltv", value)
+            slots.setdefault("target_ltv_unit", "percent")
+            continue
+        if not interest_assigned and (_contains_any(before, _RATE_INTEREST_KEYWORDS) or _contains_any(after, _RATE_INTEREST_KEYWORDS)):
+            slots["interest_rate"] = value
+            slots.setdefault("interest_rate_unit", "percent")
+            interest_assigned = True
+            continue
+        if not interest_assigned:
+            slots["interest_rate"] = value
+            slots.setdefault("interest_rate_unit", "percent")
+            interest_assigned = True
+        else:
+            slots.setdefault("additional_rates", []).append(value)
+
+    year_matches = list(_TERM_YEAR_PATTERN.finditer(message))
+    month_matches = list(_TERM_MONTH_PATTERN.finditer(message))
+    term_spans = [match.span() for match in year_matches]
+    term_spans.extend(match.span() for match in month_matches)
+
+    term_months = 0
+    for match in year_matches:
+        try:
+            term_months += int(match.group("years")) * 12
+        except (TypeError, ValueError):
+            continue
+    for match in month_matches:
+        try:
+            term_months += int(match.group("months"))
+        except (TypeError, ValueError):
+            continue
+    if term_months:
+        slots["term_months"] = term_months
+
+    skip_spans = rate_spans + term_spans
+
+    def _overlaps(target: tuple[int, int], span: tuple[int, int]) -> bool:
+        return target[0] < span[1] and span[0] < target[1]
+
     for match in _AMOUNT_PATTERN.finditer(message):
+        span = match.span()
+        if any(_overlaps(span, other) for other in skip_spans):
+            continue
         raw = match.group("num")
         unit = match.group("unit")
         currency = match.group("currency")
@@ -152,29 +237,40 @@ def _extract_slots(message: str) -> Dict[str, Any]:
             continue
         if not normalized:
             continue
-        if "loan_amount" not in slots:
-            slots["loan_amount"] = normalized
-        else:
-            slots.setdefault("additional_amounts", []).append(normalized)
+        context = (message[max(0, span[0] - 12): min(len(message), span[1] + 12)]).lower()
+        assigned = False
+
+        if _contains_any(context, _INCOME_KEYWORDS):
+            slots.setdefault("annual_income", normalized)
+            assigned = True
+        elif _contains_any(context, _DEBT_KEYWORDS):
+            if _contains_any(context, _MONTH_KEYWORDS):
+                slots.setdefault("monthly_debt_payment", normalized)
+                slots.setdefault("annual_debt_service", normalized * 12)
+            else:
+                slots.setdefault("annual_debt_service", normalized)
+            assigned = True
+        elif _contains_any(context, _COLLATERAL_KEYWORDS):
+            if "collateral_value" not in slots:
+                slots["collateral_value"] = normalized
+            else:
+                slots.setdefault("additional_amounts", []).append(normalized)
+            assigned = True
+        elif _contains_any(context, _LOAN_KEYWORDS):
+            if "loan_amount" not in slots:
+                slots["loan_amount"] = normalized
+            else:
+                slots.setdefault("additional_amounts", []).append(normalized)
+            assigned = True
+
+        if not assigned:
+            if "loan_amount" not in slots:
+                slots["loan_amount"] = normalized
+            else:
+                slots.setdefault("additional_amounts", []).append(normalized)
+
         if currency and "currency" not in slots:
             slots["currency"] = currency
-
-    rate_match = _RATE_PATTERN.search(message)
-    if rate_match:
-        try:
-            slots["interest_rate"] = float(rate_match.group("rate"))
-        except (TypeError, ValueError):
-            pass
-
-    years_match = _TERM_YEAR_PATTERN.search(message)
-    months_match = _TERM_MONTH_PATTERN.search(message)
-    term_months: Optional[int] = None
-    if years_match:
-        term_months = int(years_match.group("years")) * 12
-    if months_match:
-        term_months = (term_months or 0) + int(months_match.group("months"))
-    if term_months:
-        slots["term_months"] = term_months
 
     return slots
 

@@ -506,7 +506,7 @@ def _prepare_calc_params(request: ChatRequest, resolution: IntentResolution) -> 
     if resolution.slots:
         for key, value in resolution.slots.items():
             params.setdefault(key, value)
-    return _normalize_calc_params(params)
+    return _normalize_calc_params(params, message=request.message)
 
 
 def _attach_intent_metadata(
@@ -921,7 +921,7 @@ def _humanize_param_name(name: str) -> str:
     return CALC_PARAM_LABELS.get(name, name)
 
 
-def _normalize_calc_params(params: dict[str, Any]) -> dict[str, Any]:
+def _normalize_calc_params(params: dict[str, Any], *, message: str | None = None) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for key, value in params.items():
         if isinstance(value, str):
@@ -948,6 +948,8 @@ def _normalize_calc_params(params: dict[str, Any]) -> dict[str, Any]:
         _copy_if_missing("collateral_value", "property_value")
         _copy_if_missing("existing_debt_payment", "total_debt_payment")
         _copy_if_missing("total_debt_payment", "existing_debt_payment")
+        _copy_if_missing("annual_debt_service", "total_debt_payment")
+        _copy_if_missing("total_debt_payment", "annual_debt_service")
 
     _apply_aliases()
 
@@ -960,15 +962,24 @@ def _normalize_calc_params(params: dict[str, Any]) -> dict[str, Any]:
 
     _apply_aliases()
 
-    _fill_collateral_and_loan_amounts(normalized)
+    monthly_debt = _to_numeric(normalized.get("monthly_debt_payment"))
+    if monthly_debt is not None and _is_empty_value(normalized.get("annual_debt_service")):
+        normalized["annual_debt_service"] = int(round(monthly_debt * 12))
+
+    _apply_aliases()
+
+    _fill_collateral_and_loan_amounts(normalized, message=message)
 
     _apply_aliases()
 
     return normalized
 
 
-def _fill_collateral_and_loan_amounts(params: dict[str, Any]) -> None:
+def _fill_collateral_and_loan_amounts(params: dict[str, Any], *, message: str | None = None) -> None:
     """추출된 수치 정보를 활용해 담보 가치/대출 금액을 보완한다."""
+
+    if not _has_ltv_context(params, message=message):
+        return
 
     additional = params.get("additional_amounts")
     if not isinstance(additional, (list, tuple)) or not additional:
@@ -1026,6 +1037,56 @@ def _fill_collateral_and_loan_amounts(params: dict[str, Any]) -> None:
             params["loan_amount"] = int(round(loan_numeric))
         else:
             params["loan_amount"] = loan_value
+
+
+def _has_ltv_context(params: dict[str, Any], *, message: str | None) -> bool:
+    hints = {
+        str(params.get("calc_type")),
+        str(params.get("category")),
+    }
+    if any(
+        isinstance(token, str)
+        and token.strip().lower() in {"ltv", "loan_to_value"}
+        for token in hints
+    ):
+        return True
+
+    text = (message or "").lower()
+    if not text:
+        return False
+
+    disallow_keywords = (
+        "연소득",
+        "소득",
+        "연봉",
+        "부채",
+        "월 상환",
+        "월상환",
+        "dsr",
+        "dti",
+        "한도",
+        "중도상환",
+        "수수료",
+    )
+    if any(keyword in text for keyword in disallow_keywords):
+        return False
+
+    keywords = (
+        "ltv",
+        "담보",
+        "담보비율",
+        "담보 비율",
+        "담보인정",
+        "담보 인정",
+        "집값",
+        "주택가격",
+        "주택 가격",
+        "주택가액",
+        "매매가",
+        "시세",
+        "아파트값",
+    )
+    return any(keyword in text for keyword in keywords)
 
 
 def _summarize_compute_result(
@@ -1572,10 +1633,10 @@ def _infer_calc_category(
         _has_values(combined, "loan_amount") or _has_values(combined, "principal")
     ):
         return "ltv"
-    if _has_values(combined, "annual_income", "total_debt_payment"):
-        return "dti"
     if _has_values(combined, "annual_income", "annual_debt_service"):
         return "dsr"
+    if _has_values(combined, "annual_income", "total_debt_payment"):
+        return "dti"
     if _has_values(combined, "principal") and _has_non_empty_sequence(combined.get("interest_rates")):
         return "payment_sensitivity"
     if _has_values(combined, "loan_amount") and _has_non_empty_sequence(combined.get("interest_rates")):
@@ -1627,11 +1688,17 @@ def _has_non_empty_sequence(value: Any) -> bool:
 
 def _coerce_int(value: Any) -> Any:
     try:
+        if isinstance(value, bool):
+            return int(value)
         if isinstance(value, str):
             cleaned = value.replace(",", "").strip()
             if cleaned.endswith("개월"):
                 cleaned = cleaned[: -len("개월")].strip()
             return int(cleaned)
+        if isinstance(value, float):
+            if value.is_integer():
+                return int(value)
+            return value
         return int(value)
     except (TypeError, ValueError):
         return value
@@ -1650,12 +1717,12 @@ def _coerce_float(value: Any) -> Any:
 def _to_numeric(value: Any) -> float | None:
     """값을 float로 변환할 수 있으면 반환하고, 불가하면 None을 돌려준다."""
 
-    coerced_int = _coerce_int(value)
-    if isinstance(coerced_int, int):
-        return float(coerced_int)
     coerced_float = _coerce_float(value)
     if isinstance(coerced_float, float):
         return coerced_float
+    coerced_int = _coerce_int(value)
+    if isinstance(coerced_int, int):
+        return float(coerced_int)
     return None
 
 
