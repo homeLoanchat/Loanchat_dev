@@ -181,4 +181,4 @@ PYTHONPATH=$(pwd) pytest tests/unit
 <img width="442" height="478" alt="토이 프로젝트_4팀(Lang잔고를 부탁해)_(아키텍쳐 다이어그램)" src="https://github.com/user-attachments/assets/2da84838-45d6-4740-b66c-b43aa2e9dab7" />
 
 ## 라이선스
-비공개 프로젝트이며, 사용 범위는 팀 내부로 제한됩니다.
+
