@@ -346,7 +346,11 @@ class ChatService:
             return build_chat_response(
                 intent=intent,
                 category=response_category,
-                data=compute_payload,
+                data=_normalize_calculational_payload(
+                    compute_payload,
+                    calc_type=calc_type,
+                    category=response_category,
+                ),
                 message=message,
                 generated_at=generated_at,
                 mock=getattr(self._compute, "is_mock", False),
@@ -936,6 +940,43 @@ def _build_compute_answer_message(
 
 def _humanize_param_name(name: str) -> str:
     return CALC_PARAM_LABELS.get(name, name)
+
+
+def _normalize_calculational_payload(
+    payload: dict[str, Any],
+    *,
+    calc_type: CalcType | None,
+    category: str | None,
+) -> dict[str, Any]:
+    normalized = dict(payload or {})
+
+    needs_input_value = normalized.get("needs_input")
+    normalized["needs_input"] = bool(needs_input_value)
+    normalized["need_inputs"] = normalized["needs_input"]
+
+    followups = normalized.get("followups")
+    if isinstance(followups, list):
+        normalized["followups"] = list(followups)
+    else:
+        normalized["followups"] = []
+
+    missing = normalized.get("missing_params")
+    if normalized["needs_input"]:
+        if not isinstance(missing, list):
+            normalized["missing_params"] = list(missing) if isinstance(missing, (list, tuple)) else []
+    else:
+        normalized["missing_params"] = []
+
+    if calc_type is not None:
+        normalized.setdefault("calc_type", calc_type.value)
+        normalized.setdefault("type", calc_type.value)
+    else:
+        normalized.setdefault("type", "calc")
+
+    if category:
+        normalized.setdefault("category", category)
+
+    return normalized
 
 
 def _normalize_calc_params(params: dict[str, Any], *, message: str | None = None) -> dict[str, Any]:
